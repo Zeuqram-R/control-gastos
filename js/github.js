@@ -32,6 +32,7 @@ export function b64ToBlob(b64, type) {
 }
 
 export function createClient(token) {
+  const meta = { tokenExp: null };
   async function call(path, opts = {}) {
     let res;
     try {
@@ -49,6 +50,9 @@ export function createClient(token) {
     } catch (e) {
       throw new GitHubError(0, 'Sin conexión');
     }
+    // GitHub manda cuándo vence el token (si el navegador deja leerlo).
+    const exp = res.headers.get('github-authentication-token-expiration');
+    if (exp) meta.tokenExp = exp;
     if (!res.ok) {
       let msg = res.statusText;
       try { msg = (await res.json()).message || msg; } catch (e) { /* sin cuerpo */ }
@@ -60,6 +64,7 @@ export function createClient(token) {
   const base = `/repos/${REPO.owner}/${REPO.repo}`;
 
   return {
+    meta,
     // Revisa que el token sirva y pueda escribir.
     async checkAccess() {
       const r = await call(base);

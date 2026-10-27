@@ -1,11 +1,12 @@
 import { createSync } from './sync.js';
 import { GitHubError } from './github.js';
 
-import { $, h, ago, tile } from './ui.js';
+import { $, h, ago, privacy } from './ui.js';
+import { prefs } from './prefs.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 
-const APP_VERSION = '2.3';
+const APP_VERSION = '2.4';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
@@ -61,6 +62,7 @@ $('#btn-back').addEventListener('click', () => go(back));
 // ---------- Páginas ----------
 function render() {
   const main = $('#main');
+  applyPrefs();
   const connected = !!sync.config;
   $('#bottom-nav').hidden = !connected;
   $('#btn-ajustes').hidden = !connected;
@@ -144,7 +146,9 @@ function needData(fn) {
     if (!sync.hasData()) {
       return h('div', { class: 'card' }, h('h2', {}, 'Bajando los datos…'), h('p', { class: 'note' }, sync.status.state === 'offline' ? 'Sin conexión. Cuando vuelva el internet se bajan solos.' : 'Esto pasa solo la primera vez.'));
     }
-    return fn({ sync, toast, go, rerender: render });
+    const out = [].concat(fn({ sync, toast, go, rerender: render }));
+    const b = page === 'resumen' ? tokenBanner() : null;
+    return b ? [b, ...out] : out;
   };
 }
 
@@ -173,31 +177,126 @@ const ICON = {
   dark: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>',
 };
 
+// Preferencias de este aparato.
+const FONT = { normal: 1, grande: 1.12, mayor: 1.25 };
+function applyPrefs() {
+  const z = FONT[prefs.get('letra', 'normal')] || 1;
+  $('#main').style.zoom = z === 1 ? '' : String(z);
+  privacy.hide = !!prefs.get('ocultar', false) && !revealed;
+  const eye = $('#btn-eye');
+  eye.hidden = !prefs.get('ocultar', false) || !sync.config;
+  eye.setAttribute('aria-pressed', String(revealed));
+  eye.setAttribute('aria-label', revealed ? 'Ocultar montos' : 'Mostrar montos');
+  eye.innerHTML = revealed ? EYE.open : EYE.closed;
+}
+let revealed = false;
+const EYE = {
+  closed: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c5.5 0 9 5.5 9.5 7-.3.8-1.2 2.5-2.8 4M6.6 6.6C4.4 8 3 10.2 2.5 12c.5 1.5 4 7 9.5 7 1.7 0 3.2-.5 4.5-1.2"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+  open: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+};
+$('#btn-eye').addEventListener('click', () => { revealed = !revealed; applyPrefs(); render(); });
+
+const MS_DIA = 864e5;
+function tokenVence() {
+  const auto = sync.tokenExpiration();
+  const v = auto ? new Date(auto.replace(' UTC', 'Z').replace(' ', 'T')) : (sync.config?.tokenVence ? new Date(`${sync.config.tokenVence}T12:00:00`) : null);
+  if (!v || Number.isNaN(+v)) return null;
+  return { fecha: v, dias: Math.ceil((v - Date.now()) / MS_DIA), auto: !!auto };
+}
+function tokenBanner() {
+  const t = tokenVence();
+  if (!t || t.dias > 30) return null;
+  return h('section', { class: 'card banner' + (t.dias <= 7 ? ' bad' : '') },
+    h('div', { class: 'main' },
+      h('b', {}, t.dias <= 0 ? 'El token de GitHub venció' : `El token de GitHub vence en ${t.dias} día${t.dias === 1 ? '' : 's'}`),
+      h('span', { class: 'sub' }, 'Creá uno nuevo y pegalo en Ajustes para que la app siga sincronizando.')),
+    h('button', { class: 'btn sm', type: 'button', onclick: () => go('ajustes') }, 'Ver'));
+}
+
+const fmtBytes = (b) => (b == null ? '—' : b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
+let storageCache = null;
+
 function viewAjustes() {
   const s = sync.status;
   const c = sync.config;
   const tema = getTheme();
-  const opt = (k, label) => {
-    const b = h('button', { type: 'button', 'aria-pressed': String(tema === k), onclick: () => setTheme(k) });
-    b.innerHTML = ICON[k];
+  const seg = (items, current, onPick, cls = '') => h('div', { class: `seg ${cls}` }, items.map(([k, label, icon]) => {
+    const b = h('button', { type: 'button', 'aria-pressed': String(current === k), onclick: () => onPick(k) });
+    if (icon) b.innerHTML = icon;
     b.append(label);
     return b;
-  };
+  }));
+  const sw = (id, label, sub, checked, onChange) => h('label', { class: 'switch-row', for: id },
+    h('span', { class: 'main' }, label, sub ? h('span', { class: 'sub' }, sub) : null),
+    h('input', { type: 'checkbox', role: 'switch', id, class: 'switch', checked: checked || null, onchange: (e) => onChange(e.target.checked) }));
+
+  const devIn = h('input', { class: 'input', id: 'aj-dev', type: 'text', value: c.dispositivo, autocomplete: 'off',
+    onchange: async (e) => { const v = e.target.value.trim(); if (v && v !== c.dispositivo) { await sync.updateConfig({ dispositivo: v }); toast('Nombre del aparato guardado.'); } } });
+  devIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+
+  const t = tokenVence();
+  const venceIn = h('input', { class: 'input', id: 'aj-vence', type: 'date', value: c.tokenVence || '',
+    onchange: async (e) => { await sync.updateConfig({ tokenVence: e.target.value || null }); render(); } });
+
+  if (!storageCache) sync.storageInfo().then((info) => { storageCache = info; if (page === 'ajustes') render(); });
+  const st = storageCache;
+
   return [
     h('section', { class: 'card' },
       h('h2', {}, 'Apariencia'),
-      h('p', { class: 'note' }, 'Auto sigue el modo claro u oscuro del aparato. Se guarda solo en este dispositivo.'),
-      h('div', { class: 'seg three' }, opt('auto', 'Auto'), opt('light', 'Claro'), opt('dark', 'Oscuro'))),
+      h('p', { class: 'note' }, 'Se guarda solo en este aparato. Auto sigue el modo claro u oscuro del sistema.'),
+      seg([['auto', 'Auto', ICON.auto], ['light', 'Claro', ICON.light], ['dark', 'Oscuro', ICON.dark]], tema, setTheme, 'three'),
+      h('div', { class: 'field', style: { marginTop: '16px', marginBottom: '0' } },
+        h('label', {}, 'Tamaño de letra'),
+        seg([['normal', 'Normal'], ['grande', 'Grande'], ['mayor', 'Más grande']], prefs.get('letra', 'normal'), (k) => { prefs.set('letra', k); applyPrefs(); render(); }, 'three'))),
+
+    h('section', { class: 'card' },
+      h('h2', {}, 'Privacidad'),
+      sw('aj-ocultar', 'Ocultar montos', 'Los montos salen como ₡•••••. Tocá el ojo de arriba para verlos un rato.', prefs.get('ocultar', false), (v) => { prefs.set('ocultar', v); revealed = false; applyPrefs(); render(); })),
+
     h('section', { class: 'card' },
       h('h2', {}, 'Este dispositivo'),
+      h('div', { class: 'field' }, h('label', {}, '¿Quién lo usa?'),
+        seg([['Jose', 'Jose'], ['Ali', 'Ali']], c.persona, async (k) => { await sync.updateConfig({ persona: k }); toast(`Ahora este aparato es de ${k}.`); render(); })),
+      h('div', { class: 'field' }, h('label', { for: 'aj-dev' }, 'Nombre del aparato'), devIn, h('span', { class: 'hint' }, 'Sale en el historial de cambios.')),
+      h('div', { class: 'field', style: { marginBottom: '0' } }, h('label', { for: 'aj-inicio' }, 'Abrir la app en'),
+        h('select', { class: 'input', id: 'aj-inicio', onchange: (e) => { prefs.set('inicio', e.target.value); toast('Listo: la próxima vez abre ahí.'); } },
+          ['resumen', 'lista', 'productos', 'recurrentes', 'deudas'].map((k) => h('option', { value: k, selected: prefs.get('inicio', 'resumen') === k || null }, TITLES[k]))))),
+
+    h('section', { class: 'card' },
+      h('h2', {}, 'Token de GitHub'),
+      t ? h('p', { class: 'token-line' + (t.dias <= 30 ? ' warn' : '') },
+        t.dias <= 0 ? 'Venció' : `Vence el ${t.fecha.toLocaleDateString('es-CR', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+        h('span', { class: 'sub' }, t.dias > 0 ? `Faltan ${t.dias} días${t.auto ? ' · dato de GitHub' : ''}` : 'Creá uno nuevo y volvé a conectar.'))
+        : h('p', { class: 'note' }, 'Poné la fecha en que vence tu token para que la app te avise un mes antes.'),
+      t && t.auto ? null : h('div', { class: 'field', style: { marginBottom: '0' } }, h('label', { for: 'aj-vence' }, 'Fecha de vencimiento'), venceIn),
+      h('p', { class: 'note', style: { marginTop: '12px', marginBottom: '0' } }, 'Para cambiarlo: Desconectar (abajo), pegar el token nuevo y Conectar.')),
+
+    h('section', { class: 'card' },
+      h('h2', {}, 'Sincronización'),
       h('dl', { class: 'kv' },
-        h('dt', {}, 'Persona'), h('dd', {}, c.persona),
-        h('dt', {}, 'Dispositivo'), h('dd', {}, c.dispositivo),
         h('dt', {}, 'Última sincronización'), h('dd', {}, s.lastSync ? new Date(s.lastSync).toLocaleString('es-CR') : 'nunca'),
         h('dt', {}, 'Cambios por subir'), h('dd', {}, String(s.pending)),
         h('dt', {}, 'Estado'), h('dd', {}, { idle: 'Al día', checking: 'Revisando', uploading: 'Subiendo', downloading: 'Bajando', offline: 'Sin conexión', error: 'Error' }[s.state] || s.state)),
-      s.message ? h('p', { class: 'error-msg' }, s.message) : null,
+      s.message && s.message !== 'reintento' ? h('p', { class: 'error-msg' }, s.message) : null,
       h('button', { class: 'btn block', type: 'button', onclick: () => sync.sync() }, 'Sincronizar ahora')),
+
+    h('section', { class: 'card' },
+      h('h2', {}, 'Almacenamiento'),
+      h('dl', { class: 'kv' },
+        h('dt', {}, 'Archivos de datos'), h('dd', {}, st ? String(st.archivos) : '…'),
+        h('dt', {}, 'Fotos guardadas'), h('dd', {}, st ? `${st.fotos} (${fmtBytes(st.fotosBytes)})` : '…'),
+        h('dt', {}, 'Espacio usado por la app'), h('dd', {}, st ? fmtBytes(st.usado) : '…')),
+      h('div', { class: 'btn-col' },
+        h('button', { class: 'btn secondary block', type: 'button', onclick: async () => {
+          if (!confirm('¿Volver a bajar todos los datos y fotos? Los cambios por subir no se pierden.')) return;
+          storageCache = null; toast('Bajando todo de nuevo…'); await sync.redownload(); storageCache = null; render();
+        } }, 'Volver a bajar todo'),
+        h('button', { class: 'btn secondary block', type: 'button', onclick: async () => {
+          if (!confirm('¿Borrar el historial de sincronización de este aparato?')) return;
+          await sync.clearLog(); toast('Historial borrado.');
+        } }, 'Borrar historial de sincronización'))),
+
     h('section', { class: 'card' },
       h('h2', {}, 'Desconectar'),
       h('p', { class: 'note' }, 'Borra el token y los datos guardados en este dispositivo. Lo que está en GitHub no se toca.' + (s.pending ? ` Ojo: hay ${s.pending} cambio(s) sin subir que se perderían.` : '')),
@@ -206,7 +305,7 @@ function viewAjustes() {
         await sync.disconnect();
         go('setup');
       } }, 'Desconectar este dispositivo')),
-    h('p', { class: 'note', style: 'text-align:center' }, `Versión ${APP_VERSION}`),
+    h('p', { class: 'note', style: { textAlign: 'center' } }, `Versión ${APP_VERSION}`),
     h('p', { class: 'note diag' }, diagText()),
   ];
 }
@@ -363,7 +462,8 @@ async function start() {
   }
   const ok = await sync.init();
   const h0 = location.hash.slice(1);
-  page = ok ? (TITLES[h0] && h0 !== 'setup' ? h0 : 'resumen') : 'setup';
+  const inicio = prefs.get('inicio', 'resumen');
+  page = ok ? (TITLES[h0] && !['setup', 'ajustes', 'historial'].includes(h0) ? h0 : (TITLES[inicio] ? inicio : 'resumen')) : 'setup';
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === page));
   render();
   renderStatus(sync.status);

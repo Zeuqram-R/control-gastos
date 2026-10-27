@@ -294,3 +294,21 @@ details.pp[open] summary::before { transform: rotate(90deg); }
 /* Ajustes */
 .seg.three button { font-size: 14.5px; display: flex; align-items: center; justify-content: center; white-space: nowrap; padding: 0 6px; }
 .seg button svg { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.switch-row .main { flex: 1; min-width: 0; font-weight: 600; }
+.switch-row .sub { display: block; font-weight: 400; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.switch { appearance: none; -webkit-appearance: none; flex: none; width: 50px; height: 30px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .2s; }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(20px); }
+.token-line { font-size: 17px; font-weight: 650; margin: 0 0 4px; }
+.token-line .sub { display: block; font-size: 13px; font-weight: 400; color: var(--muted); }
+.token-line.warn { color: var(--warn); }
+.btn-col { display: flex; flex-direction: column; gap: 8px; }
+.banner { display: flex; align-items: center; gap: 12px; border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.banner.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
+.banner .main { flex: 1; min-width: 0; }
+.banner .sub { display: block; font-size: 13px; color: var(--muted); }
+#btn-eye[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+select.input { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) 19px, calc(100% - 13px) 19px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 32px; }

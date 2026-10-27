@@ -1,5 +1,5 @@
 // Página Resumen: quincena actual, gasto por tipo, el mes, perecederos, gastos, súper, IVA y compras.
-import { h, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty } from '../ui.js';
+import { h, privacy, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty } from '../ui.js';
 import * as C from '../calc.js';
 
 const state = { buscar: '', todoVenc: false, todoCompras: false };
@@ -48,7 +48,7 @@ function secQuincena(D, B, hoy) {
         stat('Ingreso + saldo a favor', crc(B.neto + B.saldo), ingSub),
         stat('Por pagar', crc(B.fijos + B.deu), `${items.length} pago(s) hasta el ${dayShort(q.fin)}${B.sinFecha ? ` · ${B.sinFecha} sin fecha todavía` : ''}`),
         stat('Ya gastado', crc(B.gastado), (B.tachado ? `Incluye ${crc(B.tachado)} de pagos tachados · ` : '') + (B.wink ? `Salario ${crc(B.gastado - B.wink)} · Wink ${crc(B.wink)} (no sale de la quincena)` : 'Todo de salario')),
-        stat('Queda libre', `${B.queda < 0 ? '−' : ''}${crc(Math.abs(B.queda))}`, B.queda < 0 ? `Falta para cubrir lo que hay que pagar hasta el ${dayShort(q.fin)}` : 'Libre para el resto de la quincena', B.queda < 0 ? 'var(--bad)' : 'var(--ok)')),
+        privacy.hide ? stat('Queda libre', crc(0), 'Tocá el ojo de arriba para verlo') : stat('Queda libre', `${B.queda < 0 ? '−' : ''}${crc(Math.abs(B.queda))}`, B.queda < 0 ? `Falta para cubrir lo que hay que pagar hasta el ${dayShort(q.fin)}` : 'Libre para el resto de la quincena', B.queda < 0 ? 'var(--bad)' : 'var(--ok)')),
       items.length ? h('details', { class: 'pp' },
         h('summary', {}, 'Ver lo que hay que pagar'),
         h('ul', { class: 'rows' }, items.map((i) => h('li', {},

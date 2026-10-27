@@ -83,6 +83,34 @@ export function createSync({ onChange, onStatus, onLog }) {
       emitStatus({});
     },
 
+    // Cambia persona, nombre del aparato u otros datos de la conexión sin desconectar.
+    async updateConfig(patch) {
+      cfg = { ...cfg, ...patch };
+      await store.set('config', 'cfg', cfg);
+      emitStatus({});
+    },
+
+    tokenExpiration() { return client?.meta?.tokenExp || null; },
+
+    // Borra la copia local (datos y fotos) y la vuelve a bajar; la cola de cambios no se toca.
+    async redownload() {
+      for (const [k] of await store.all('files')) await store.del('files', k);
+      for (const [k] of await store.all('blobs')) await store.del('blobs', k);
+      await store.del('config', 'shas');
+      files.clear(); shas.clear();
+      emitChange();
+      await api.sync();
+    },
+
+    async clearLog() { log = []; await store.set('config', 'log', log); onLog && onLog(); },
+
+    async storageInfo() {
+      const blobs = await store.all('blobs');
+      let est = null;
+      try { est = await navigator.storage?.estimate?.(); } catch (e) { /* no disponible */ }
+      return { archivos: files.size, fotos: blobs.length, fotosBytes: blobs.reduce((s, [, v]) => s + (v?.blob?.size || 0), 0), usado: est?.usage ?? null, cuota: est?.quota ?? null };
+    },
+
     async disconnect() {
       await store.clearAll();
       cfg = null; client = null; files.clear(); shas.clear(); queue = []; log = [];

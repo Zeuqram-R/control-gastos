@@ -15,8 +15,11 @@ export const h = (tag, attrs = {}, ...children) => {
   return el;
 };
 
-export const crc = (v) => '₡' + Math.round(Number(v) || 0).toLocaleString('en-US');
-export const usd = (v) => '$' + (Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+// Ocultar montos: con el modo privado activo, los montos salen como puntitos hasta tocar el ojo de arriba.
+export const privacy = { hide: false };
+const MASK = '•••••';
+export const crc = (v) => (privacy.hide ? `₡${MASK}` : '₡' + Math.round(Number(v) || 0).toLocaleString('en-US'));
+export const usd = (v) => (privacy.hide ? `$${MASK}` : '$' + (Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 }));
 export const pct = (v, d = 0) => `${(v * 100).toFixed(d)}%`;
 export const todayCR = () => new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10);
 export const ago = (iso) => {
