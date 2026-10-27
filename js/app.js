@@ -6,7 +6,7 @@ import { prefs } from './prefs.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.7';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
@@ -205,9 +205,11 @@ $('#btn-eye').addEventListener('click', () => {
 });
 
 const MS_DIA = 864e5;
+// La fecha de vencimiento del token se guarda una vez en el repo (data/config.json) y la leen todos los aparatos.
+const tokenFecha = () => (sync.hasData() ? sync.data('config').find((r) => r.id === 'token')?.vence : null) || sync.config?.tokenVence || '';
 function tokenVence() {
   const auto = sync.tokenExpiration();
-  const v = auto ? new Date(auto.replace(' UTC', 'Z').replace(' ', 'T')) : (sync.config?.tokenVence ? new Date(`${sync.config.tokenVence}T12:00:00`) : null);
+  const v = auto ? new Date(auto.replace(' UTC', 'Z').replace(' ', 'T')) : (tokenFecha() ? new Date(`${tokenFecha()}T12:00:00`) : null);
   if (!v || Number.isNaN(+v)) return null;
   return { fecha: v, dias: Math.ceil((v - Date.now()) / MS_DIA), auto: !!auto };
 }
@@ -257,7 +259,7 @@ function viewAjustes() {
 
   const t = tokenVence();
   // Fecha con tres listas (día, mes, año): el calendario del sistema se portaba raro en la Mac.
-  const [vy, vm, vd] = (c.tokenVence || '').split('-');
+  const [vy, vm, vd] = tokenFecha().split('-');
   const mk = (id, label, opts, cur) => h('select', { class: 'input', id, 'aria-label': label },
     h('option', { value: '' }, label), opts.map(([v, t]) => h('option', { value: v, selected: v === cur || null }, t)));
   const pad = (n) => String(n).padStart(2, '0');
@@ -268,7 +270,7 @@ function viewAjustes() {
   const saveVence = async () => {
     if (!selD.value || !selM.value || !selY.value) return;
     const v = `${selY.value}-${selM.value}-${selD.value}`;
-    if (v !== c.tokenVence) { await sync.updateConfig({ tokenVence: v }); toast('Fecha guardada.'); render(); }
+    if (v !== tokenFecha()) { await sync.mutate('config', { kind: 'patch', record: { id: 'token', vence: v, por: c.persona } }, `vencimiento del token: ${v}`); toast('Fecha guardada para todos los aparatos.'); render(); }
   };
   for (const sel of [selD, selM, selY]) sel.addEventListener('change', saveVence);
   const venceIn = h('div', { class: 'date3' }, selD, selM, selY);
@@ -300,7 +302,8 @@ function viewAjustes() {
         t.dias <= 0 ? 'Venció' : `Vence el ${t.fecha.toLocaleDateString('es-CR', { day: 'numeric', month: 'long', year: 'numeric' })}`,
         h('span', { class: 'sub' }, t.dias > 0 ? `Faltan ${t.dias} días${t.auto ? ' · dato de GitHub' : ''}` : 'Creá uno nuevo y volvé a conectar.'))
         : h('p', { class: 'note' }, 'Poné la fecha en que vence tu token para que la app te avise un mes antes.'),
-      t && t.auto ? null : h('div', { class: 'field', style: { marginBottom: '0' } }, h('label', {}, 'Fecha de vencimiento'), venceIn),
+      t && t.auto ? null : h('details', { class: 'pp', open: t ? null : true }, h('summary', {}, t ? 'Cambiar la fecha' : 'Poner la fecha'),
+        h('p', { class: 'note', style: { margin: '8px 0' } }, 'Vale para todos los aparatos; cuando renovés el token, cambiala aquí en uno solo.'), venceIn),
       h('p', { class: 'note', style: { marginTop: '12px', marginBottom: '0' } }, 'Para cambiarlo: Desconectar (abajo), pegar el token nuevo y Conectar.')),
 
     syncCard(),
