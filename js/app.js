@@ -1,32 +1,11 @@
 import { createSync } from './sync.js';
 import { GitHubError } from './github.js';
 
-const $ = (sel, root = document) => root.querySelector(sel);
-const h = (tag, attrs = {}, ...children) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (k === 'text') el.textContent = v;
-    else el.setAttribute(k, v === true ? '' : v);
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-};
+import { $, h, ago, tile } from './ui.js';
+import { viewResumen } from './views/resumen.js';
+import { viewLista } from './views/lista.js';
 
-const crc = (v) => '₡' + Math.round(Number(v) || 0).toLocaleString('en-US');
-const todayCR = () => new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10);
-const ago = (iso) => {
-  if (!iso) return 'nunca';
-  const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
-  if (s < 45) return 'hace un momento';
-  if (s < 3600) return `hace ${Math.round(s / 60)} min`;
-  if (s < 86400) return `hace ${Math.round(s / 3600)} h`;
-  return `hace ${Math.round(s / 86400)} d`;
-};
-const APP_VERSION = '1.1 (f)';
-const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const APP_VERSION = '2.0';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
@@ -82,11 +61,11 @@ function render() {
   $('#btn-ajustes').hidden = !connected;
   if (!connected) page = 'setup';
   $('#page-title').textContent = TITLES[page] || 'Control de gastos';
-  const view = { setup: viewSetup, resumen: viewResumen, ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
-  main.replaceChildren(...[].concat(view()));
+  main.replaceChildren(...[].concat(view()).filter((x) => x != null && x !== false));
   if (keep) {
     const el = document.getElementById(keep.id);
     if (el) { el.value = keep.value; el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (e) { /* select */ } }
@@ -153,38 +132,17 @@ function guessDevice() {
   return '';
 }
 
-function viewResumen() {
-  if (!sync.hasData()) {
-    return h('div', { class: 'card' }, h('h2', {}, 'Bajando los datos…'), h('p', { class: 'note' }, sync.status.state === 'offline' ? 'Sin conexión. Cuando vuelva el internet se bajan solos.' : 'Esto pasa solo la primera vez.'));
-  }
-  const gastos = sync.data('gastos');
-  const compras = sync.data('compras');
-  const productos = sync.data('productos');
-  const deudas = sync.data('deudas');
-  const pagadas = new Set(sync.data('pagos_deudas').map((p) => p.id));
-  const mes = gastos.map((g) => String(g.fecha).slice(0, 7)).sort().pop() || todayCR().slice(0, 7);
-  const delMes = gastos.filter((g) => String(g.fecha).slice(0, 7) === mes);
-  const pendientes = deudas.filter((d) => !pagadas.has(d.id));
-  const mesLabel = `${MESES[Number(mes.slice(5, 7)) - 1]} ${mes.slice(0, 4)}`;
-
-  return [
-    h('section', { class: 'tiles' },
-      tile(`Gastos de ${mesLabel}`, crc(delMes.reduce((s, g) => s + Number(g.monto), 0)), `${delMes.length} gasto(s)`),
-      tile('Compras registradas', String(compras.length), 'artículos de facturas'),
-      tile('Productos', String(productos.length), 'en el catálogo'),
-      tile('Deudas pendientes', String(pendientes.length), `${deudas.length - pendientes.length} pagada(s)`)),
-    h('div', { class: 'card' },
-      h('h2', {}, 'Fase 1: la base'),
-      h('p', { class: 'note' }, 'El resumen completo, la lista y lo demás llegan en las próximas fases. Jalá hacia abajo para actualizar, y tocá el estado de arriba para ver el historial.')),
-  ];
-}
-
-function tile(lbl, num, sub) {
-  return h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, lbl), h('div', { class: 'num' }, num), h('div', { class: 'sub' }, sub));
+function needData(fn) {
+  return () => {
+    if (!sync.hasData()) {
+      return h('div', { class: 'card' }, h('h2', {}, 'Bajando los datos…'), h('p', { class: 'note' }, sync.status.state === 'offline' ? 'Sin conexión. Cuando vuelva el internet se bajan solos.' : 'Esto pasa solo la primera vez.'));
+    }
+    return fn({ sync, toast, go, rerender: render });
+  };
 }
 
 function viewProximamente() {
-  const fase = { lista: 2, productos: 3, recurrentes: 4, deudas: 4 }[page];
+  const fase = { productos: 3, recurrentes: 4, deudas: 4 }[page];
   const icon = document.querySelector(`.tab[data-page="${page}"] svg`)?.cloneNode(true);
   return h('div', { class: 'card coming' }, icon, h('h2', {}, TITLES[page]), h('p', { class: 'note' }, `Llega en la fase ${fase}. Los datos ya están guardados en el dispositivo.`));
 }
