@@ -263,8 +263,8 @@ function viewHistorial() {
   return out;
 }
 
-// Algunos iPhone/iPad dejan la barra de abajo más arriba de lo debido cuando la app está instalada.
-// Se mide el espacio real de la pantalla y se corrige.
+// Medidas de pantalla para diagnóstico (Ajustes). En iOS 26 la app instalada puede quedar más corta
+// que la pantalla (WebKit 301108); eso se corrige en el CSS, aquí solo se mide.
 function fixBottom() {
   const probe = $('#vp-probe');
   if (!probe) return;
@@ -275,16 +275,14 @@ function fixBottom() {
   const bottom = probe.getBoundingClientRect().bottom;
   let gap = 0;
   if (standalone && Math.abs(innerWidth - sw) < 2) {
-    const g = Math.round(sh - bottom);
-    if (g > 2 && g < 90) gap = g;
+    gap = Math.round(sh - bottom);
   }
-  document.documentElement.style.setProperty('--vp-gap', gap + 'px');
   fixBottom.info = { sh, bottom: Math.round(bottom), ih: innerHeight, gap, standalone: !!standalone };
 }
 
 function diagText() {
   const i = fixBottom.info || {};
-  return `Pantalla ${i.sh} · visible ${i.bottom} · ajuste ${i.gap}px${i.standalone ? ' · instalada' : ''}`;
+  return `Pantalla ${i.sh} · visible ${i.bottom} · faltan ${i.gap}px${i.standalone ? ' · instalada' : ''}`;
 }
 
 // Jalar hacia abajo para actualizar.

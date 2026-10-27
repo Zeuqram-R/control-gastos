@@ -15,8 +15,7 @@
   --nav-h: 64px;
   --top-h: 56px;
   --shadow: 0 10px 30px rgba(0, 0, 0, .12);
-  --vp-gap: 0px;
-  --nav-bottom: calc(max(8px, env(safe-area-inset-bottom) - 14px) - var(--vp-gap));
+  --nav-bottom: max(8px, calc(env(safe-area-inset-bottom) - 14px));
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -33,6 +32,11 @@
 }
 
 * { box-sizing: border-box; }
+/* iOS 26: la app instalada con barra de estado translúcida queda más corta que la pantalla
+   (WebKit 301108) y no dibuja lo fijo abajo. Estirar el html a toda la pantalla lo corrige. */
+@media (display-mode: standalone) {
+  html { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); }
+}
 html, body { margin: 0; background: var(--bg); color: var(--fg); overscroll-behavior-y: none; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
