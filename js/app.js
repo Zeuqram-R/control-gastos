@@ -7,7 +7,7 @@ import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 
-const APP_VERSION = '3.1';
+const APP_VERSION = '3.2';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
