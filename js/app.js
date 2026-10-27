@@ -1,16 +1,17 @@
 import { createSync } from './sync.js';
 import { GitHubError } from './github.js';
 
-import { $, h, ago, privacy } from './ui.js';
+import { $, h, ago, privacy, preloadPhotos } from './ui.js';
 import { prefs } from './prefs.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 
-const APP_VERSION = '3.0';
+const APP_VERSION = '3.1';
 
 // ---------- Estado ----------
-const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
+const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
+const sync = createSync({ onChange: () => { render(); warmPhotos(); }, onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
 const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', setup: 'Control de gastos' };
 
@@ -498,7 +499,7 @@ async function start() {
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === page));
   render();
   renderStatus(sync.status);
-  if (ok) sync.sync();
+  if (ok) { warmPhotos(); sync.sync(); }
   fixBottom();
   addEventListener('resize', fixBottom);
   addEventListener('orientationchange', () => setTimeout(fixBottom, 300));

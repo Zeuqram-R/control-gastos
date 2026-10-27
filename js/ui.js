@@ -63,7 +63,9 @@ export function bars(rows, { label = 'label', value = 'total', color = 'var(--ac
 const photoUrls = new Map();
 export function thumb(sync, clave, opts = {}) {
   const cls = opts.cls || 'thumb';
-  const path = `fotos/mini/${clave}.webp`;
+  // La foto grande (480 px) para el perfil; la mini (88 px) para las listas.
+  const big = `fotos/grande/${clave}.webp`;
+  const path = opts.big && sync.photoExists(big) ? big : `fotos/mini/${clave}.webp`;
   const box = h('span', { class: `${cls} empty` });
   if (!clave || !sync.photoExists(path)) return box;
   if (opts.open) {
@@ -71,7 +73,7 @@ export function thumb(sync, clave, opts = {}) {
     box.setAttribute('aria-label', `Ver foto de ${opts.title || 'producto'}`);
     box.addEventListener('click', (e) => { e.stopPropagation(); openPhoto(sync, clave, opts.title); });
   }
-  const put = (url) => { box.className = cls + (opts.open ? ' can-open' : ''); box.replaceChildren(h('img', { src: url, alt: '', loading: 'lazy' })); };
+  const put = (url) => { box.className = cls + (opts.open ? ' can-open' : ''); box.replaceChildren(h('img', { src: url, alt: '', decoding: 'async' })); };
   if (photoUrls.has(path)) { put(photoUrls.get(path)); return box; }
   sync.photo(path).then((blob) => {
     if (!blob) return;
@@ -79,6 +81,22 @@ export function thumb(sync, clave, opts = {}) {
     put(photoUrls.get(path));
   });
   return box;
+}
+
+// Deja todas las fotos pequeñas listas en memoria (en segundo plano), así las páginas con fotos abren al instante.
+let preloading = null;
+export function preloadPhotos(sync, paths) {
+  if (preloading) return preloading;
+  preloading = (async () => {
+    const todo = paths.filter((p) => !photoUrls.has(p));
+    for (let i = 0; i < todo.length; i += 6) {
+      await Promise.all(todo.slice(i, i + 6).map(async (p) => {
+        const blob = await sync.photo(p);
+        if (blob && !photoUrls.has(p)) photoUrls.set(p, URL.createObjectURL(blob));
+      }));
+    }
+  })().finally(() => { preloading = null; });
+  return preloading;
 }
 
 export const empty = (text) => h('div', { class: 'empty' }, text);

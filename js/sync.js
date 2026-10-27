@@ -129,6 +129,7 @@ export function createSync({ onChange, onStatus, onLog }) {
     hasData() { return files.size > 0; },
     pendingFor(name) { return queue.filter((o) => o.file === `${DATA_PREFIX}${name}.json`); },
     photoExists(path) { return shas.has(path); },
+    photoPaths(prefix) { return [...shas.keys()].filter((p) => p.startsWith(prefix)); },
 
     // Un cambio hecho en este dispositivo: se guarda en la cola y se intenta subir.
     async mutate(name, op, summary) {

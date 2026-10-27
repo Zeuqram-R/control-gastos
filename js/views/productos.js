@@ -90,7 +90,7 @@ export function viewProducto(ctx) {
   const hoy = todayCR();
   const cfg = sync.config;
 
-  const foto = thumb(sync, clave, { cls: 'ph', open: true, title: p.producto });
+  const foto = thumb(sync, clave, { cls: 'ph', open: true, big: true, title: p.producto });
   const tags = [p.categoria, p.iva ? `IVA ${p.iva}%` : null, p.perecedero && p.vida_util_dias ? `Perecedero · ~${p.vida_util_dias} días` : null].filter(Boolean);
 
   // Lo que ustedes pueden cambiar desde aquí: de quién es y dónde se guarda.
