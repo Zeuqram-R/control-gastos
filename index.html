@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control de gastos</title>
+<meta name="description" content="Control de gastos de Jose y Ali, con o sin internet.">
+<meta name="theme-color" content="#113a34">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gastos">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <h1 id="page-title">Control de gastos</h1>
+    <div class="topbar-right">
+      <button class="sync-pill" id="sync-pill" type="button" hidden><span class="dot"></span><span id="sync-text">—</span></button>
+      <button class="icon-btn" id="btn-ajustes" type="button" aria-label="Ajustes" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main"></main>
+
+  <nav class="bottom-nav" id="bottom-nav" role="tablist" hidden>
+    <button class="tab" role="tab" data-page="resumen" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v10.5a1 1 0 0 0 1 1H10v-6h4v6h3.5a1 1 0 0 0 1-1V9"/></svg><span>Resumen</span></button>
+    <button class="tab" role="tab" data-page="lista" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16.5" rx="2"/><rect x="9" y="2.5" width="6" height="4" rx="1.2"/><path d="M8.5 11h7M8.5 14.5h7M8.5 18h4"/></svg><span>Lista</span></button>
+    <button class="tab" role="tab" data-page="productos" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3.5 13.5V5.5a2 2 0 0 1 2-2h8l7.1 7.1a2 2 0 0 1 0 2.8z"/><circle cx="8" cy="8" r="1.6"/><path d="M6.9 6.9 2.5 2.5"/></svg><span>Productos</span></button>
+    <button class="tab" role="tab" data-page="recurrentes" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-14.8 5.7"/><path d="M3.5 12A8.5 8.5 0 0 1 18.3 6.3"/><path d="M18.6 2.6v3.9h-3.9"/><path d="M5.4 21.4v-3.9h3.9"/></svg><span>Recurrentes</span></button>
+    <button class="tab" role="tab" data-page="deudas" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v16.5M8.5 20.5h7"/><path d="M3.8 10.2 20.2 5.8"/><circle cx="12" cy="8" r="1.1"/><path d="M3.8 10.2 1.7 15.3M3.8 10.2l2.1 5.1M1.3 15.3h5a2.5 2.5 0 0 1-5 0z"/><path d="M20.2 5.8l-2.1 5.1M20.2 5.8l2.1 5.1M17.7 10.9h5a2.5 2.5 0 0 1-5 0z"/><ellipse cx="3.8" cy="14.2" rx="1.5" ry=".55"/><ellipse cx="3.8" cy="13" rx="1.5" ry=".55"/></svg><span>Deudas</span></button>
+  </nav>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
