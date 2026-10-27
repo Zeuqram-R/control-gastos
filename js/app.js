@@ -6,7 +6,7 @@ import { prefs } from './prefs.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 
-const APP_VERSION = '2.4';
+const APP_VERSION = '2.5';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
@@ -39,7 +39,8 @@ function renderStatus(s) {
   pill.dataset.dir = s.state === 'uploading' ? 'up' : s.state === 'downloading' ? 'down' : '';
   $('#sync-text').textContent = text;
   pill.setAttribute('aria-label', `${text}. Ver historial`);
-  if (page === 'ajustes' || page === 'historial') render();
+  if (page === 'historial') render();
+  else if (page === 'ajustes') $('#aj-sync')?.replaceWith(syncCard());
 }
 
 // ---------- Navegación ----------
@@ -182,19 +183,23 @@ const FONT = { normal: 1, grande: 1.12, mayor: 1.25 };
 function applyPrefs() {
   const z = FONT[prefs.get('letra', 'normal')] || 1;
   $('#main').style.zoom = z === 1 ? '' : String(z);
-  privacy.hide = !!prefs.get('ocultar', false) && !revealed;
+  privacy.hide = !!prefs.get('ocultar', false);
   const eye = $('#btn-eye');
-  eye.hidden = !prefs.get('ocultar', false) || !sync.config;
-  eye.setAttribute('aria-pressed', String(revealed));
-  eye.setAttribute('aria-label', revealed ? 'Ocultar montos' : 'Mostrar montos');
-  eye.innerHTML = revealed ? EYE.open : EYE.closed;
+  eye.hidden = !sync.config;
+  eye.setAttribute('aria-pressed', String(privacy.hide));
+  eye.setAttribute('aria-label', privacy.hide ? 'Mostrar montos' : 'Ocultar montos');
+  eye.innerHTML = privacy.hide ? EYE.closed : EYE.open;
 }
-let revealed = false;
 const EYE = {
   closed: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c5.5 0 9 5.5 9.5 7-.3.8-1.2 2.5-2.8 4M6.6 6.6C4.4 8 3 10.2 2.5 12c.5 1.5 4 7 9.5 7 1.7 0 3.2-.5 4.5-1.2"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
   open: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>',
 };
-$('#btn-eye').addEventListener('click', () => { revealed = !revealed; applyPrefs(); render(); });
+// El ojo de arriba oculta o muestra los montos en todas las páginas (se recuerda en este aparato).
+$('#btn-eye').addEventListener('click', () => {
+  prefs.set('ocultar', !prefs.get('ocultar', false));
+  applyPrefs(); render();
+  toast(privacy.hide ? 'Montos ocultos.' : 'Montos visibles.');
+});
 
 const MS_DIA = 864e5;
 function tokenVence() {
@@ -216,6 +221,19 @@ function tokenBanner() {
 const fmtBytes = (b) => (b == null ? '—' : b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
 let storageCache = null;
 
+function syncCard() {
+  const s = sync.status;
+  return h('section', { class: 'card', id: 'aj-sync' },
+    h('h2', {}, 'Sincronización'),
+    h('dl', { class: 'kv' },
+      h('dt', {}, 'Última sincronización'), h('dd', {}, s.lastSync ? new Date(s.lastSync).toLocaleString('es-CR') : 'nunca'),
+      h('dt', {}, 'Cambios por subir'), h('dd', {}, String(s.pending)),
+      h('dt', {}, 'Estado'), h('dd', {}, { idle: 'Al día', checking: 'Revisando', uploading: 'Subiendo', downloading: 'Bajando', offline: 'Sin conexión', error: 'Error' }[s.state] || s.state)),
+    s.message && s.message !== 'reintento' ? h('p', { class: 'error-msg' }, s.message) : null,
+    h('button', { class: 'btn block', type: 'button', onclick: () => sync.sync() }, 'Sincronizar ahora'));
+}
+const MESES_UI = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
 function viewAjustes() {
   const s = sync.status;
   const c = sync.config;
@@ -235,8 +253,22 @@ function viewAjustes() {
   devIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
 
   const t = tokenVence();
-  const venceIn = h('input', { class: 'input', id: 'aj-vence', type: 'date', value: c.tokenVence || '',
-    onchange: async (e) => { await sync.updateConfig({ tokenVence: e.target.value || null }); render(); } });
+  // Fecha con tres listas (día, mes, año): el calendario del sistema se portaba raro en la Mac.
+  const [vy, vm, vd] = (c.tokenVence || '').split('-');
+  const mk = (id, label, opts, cur) => h('select', { class: 'input', id, 'aria-label': label },
+    h('option', { value: '' }, label), opts.map(([v, t]) => h('option', { value: v, selected: v === cur || null }, t)));
+  const pad = (n) => String(n).padStart(2, '0');
+  const selD = mk('aj-vd', 'Día', Array.from({ length: 31 }, (_, i) => [pad(i + 1), String(i + 1)]), vd);
+  const selM = mk('aj-vm', 'Mes', MESES_UI.map((m, i) => [pad(i + 1), m]), vm);
+  const year = new Date().getFullYear();
+  const selY = mk('aj-vy', 'Año', Array.from({ length: 5 }, (_, i) => [String(year + i), String(year + i)]), vy);
+  const saveVence = async () => {
+    if (!selD.value || !selM.value || !selY.value) return;
+    const v = `${selY.value}-${selM.value}-${selD.value}`;
+    if (v !== c.tokenVence) { await sync.updateConfig({ tokenVence: v }); toast('Fecha guardada.'); render(); }
+  };
+  for (const sel of [selD, selM, selY]) sel.addEventListener('change', saveVence);
+  const venceIn = h('div', { class: 'date3' }, selD, selM, selY);
 
   if (!storageCache) sync.storageInfo().then((info) => { storageCache = info; if (page === 'ajustes') render(); });
   const st = storageCache;
@@ -252,7 +284,7 @@ function viewAjustes() {
 
     h('section', { class: 'card' },
       h('h2', {}, 'Privacidad'),
-      sw('aj-ocultar', 'Ocultar montos', 'Los montos salen como ₡•••••. Tocá el ojo de arriba para verlos un rato.', prefs.get('ocultar', false), (v) => { prefs.set('ocultar', v); revealed = false; applyPrefs(); render(); })),
+      sw('aj-ocultar', 'Ocultar montos', 'Los montos salen como ₡•••••. También se cambia con el ojo de arriba, en cualquier página.', prefs.get('ocultar', false), (v) => { prefs.set('ocultar', v); applyPrefs(); render(); })),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Este dispositivo'),
@@ -269,17 +301,10 @@ function viewAjustes() {
         t.dias <= 0 ? 'Venció' : `Vence el ${t.fecha.toLocaleDateString('es-CR', { day: 'numeric', month: 'long', year: 'numeric' })}`,
         h('span', { class: 'sub' }, t.dias > 0 ? `Faltan ${t.dias} días${t.auto ? ' · dato de GitHub' : ''}` : 'Creá uno nuevo y volvé a conectar.'))
         : h('p', { class: 'note' }, 'Poné la fecha en que vence tu token para que la app te avise un mes antes.'),
-      t && t.auto ? null : h('div', { class: 'field', style: { marginBottom: '0' } }, h('label', { for: 'aj-vence' }, 'Fecha de vencimiento'), venceIn),
+      t && t.auto ? null : h('div', { class: 'field', style: { marginBottom: '0' } }, h('label', {}, 'Fecha de vencimiento'), venceIn),
       h('p', { class: 'note', style: { marginTop: '12px', marginBottom: '0' } }, 'Para cambiarlo: Desconectar (abajo), pegar el token nuevo y Conectar.')),
 
-    h('section', { class: 'card' },
-      h('h2', {}, 'Sincronización'),
-      h('dl', { class: 'kv' },
-        h('dt', {}, 'Última sincronización'), h('dd', {}, s.lastSync ? new Date(s.lastSync).toLocaleString('es-CR') : 'nunca'),
-        h('dt', {}, 'Cambios por subir'), h('dd', {}, String(s.pending)),
-        h('dt', {}, 'Estado'), h('dd', {}, { idle: 'Al día', checking: 'Revisando', uploading: 'Subiendo', downloading: 'Bajando', offline: 'Sin conexión', error: 'Error' }[s.state] || s.state)),
-      s.message && s.message !== 'reintento' ? h('p', { class: 'error-msg' }, s.message) : null,
-      h('button', { class: 'btn block', type: 'button', onclick: () => sync.sync() }, 'Sincronizar ahora')),
+    syncCard(),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Almacenamiento'),
