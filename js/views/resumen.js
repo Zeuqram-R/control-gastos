@@ -128,7 +128,7 @@ function secVencimientos(ctx, cat, eventos, hoy) {
       const dias = daysBetween(hoy, r.vence);
       const when = dias < 0 ? `Venció hace ${-dias} día${dias === -1 ? '' : 's'}` : dias === 0 ? 'Vence hoy' : dias === 1 ? 'Vence mañana' : `Vence en ${dias} días`;
       return h('li', {},
-        thumb(sync, r.clave),
+        thumb(sync, r.clave, { open: true, title: r.producto }),
         h('div', { class: 'main' }, r.producto, h('span', { class: 'sub' }, `${r.sobras ? `Sobras cocinadas el ${dayShort(r.desde)}` : `Comprado ${dayShort(r.ultima)}`} · dura ~${r.dias} días${r.ubicacion ? ` · ${r.ubicacion}` : ''}`)),
         h('span', { class: 'when', style: { color: dias <= 0 ? 'var(--bad)' : dias <= 2 ? 'var(--warn)' : 'var(--muted)' } }, when));
     })) : empty('No hay perecederos pendientes.'),
@@ -194,7 +194,7 @@ function secCompras(ctx, D) {
       const ref = C.refPrecio(r, info.get(r.clave));
       const qty = r.unidad === 'kg' ? `${Number(r.cantidad).toFixed(3)} kg` : `${r.cantidad} ×`;
       return h('li', {},
-        thumb(sync, r.clave),
+        thumb(sync, r.clave, { open: true, title: r.producto }),
         h('div', { class: 'main' }, r.producto, h('span', { class: 'sub' }, `${dayShort(r.fecha)} · ${r.supermercado} · ${qty} ${crc(r.precio_unitario)}${r.unidad === 'kg' ? '/kg' : ''} · ${crc(ref.v)}/${ref.u}`)),
         h('span', { class: 'amt' }, crc(r.total)));
     }));

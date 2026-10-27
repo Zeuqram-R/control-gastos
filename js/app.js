@@ -5,7 +5,7 @@ import { $, h, ago, tile } from './ui.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
@@ -275,7 +275,7 @@ function setupPullToRefresh() {
   };
   addEventListener('touchstart', (e) => {
     // Desde la fila de botones (o cualquier cosa que se desliza de lado) no se jala para actualizar.
-    const fromSide = e.target instanceof Element && e.target.closest('.chips, .no-ptr');
+    const fromSide = e.target instanceof Element && e.target.closest('.chips, .no-ptr, .viewer');
     if (!sync.config || fromSide || window.scrollY > 0 || e.touches.length !== 1 || ind.classList.contains('spin')) { startY = null; return; }
     startY = e.touches[0].clientY; startX = e.touches[0].clientX; dy = 0; active = false;
   }, { passive: true });
@@ -306,7 +306,15 @@ function setupPullToRefresh() {
 }
 
 // ---------- Arranque ----------
+// Sin zoom en la app (solo en el visor de fotos, que tiene su propio zoom).
+function blockZoom() {
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 && !(e.target instanceof Element && e.target.closest('.viewer-stage'))) e.preventDefault(); }, { passive: false });
+  document.addEventListener('dblclick', (e) => { if (!(e.target instanceof Element && e.target.closest('.viewer-stage'))) e.preventDefault(); }, { passive: false });
+}
+
 async function start() {
+  blockZoom();
   if ('serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.register('sw.js');
