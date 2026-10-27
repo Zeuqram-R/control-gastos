@@ -5,13 +5,14 @@ import { $, h, ago, privacy } from './ui.js';
 import { prefs } from './prefs.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
+import { viewProductos, viewProducto } from './views/productos.js';
 
-const APP_VERSION = '2.7';
+const APP_VERSION = '3.0';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
-const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', setup: 'Control de gastos' };
+const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', setup: 'Control de gastos' };
 
 // Aviso abajo: aparece y se desvanece suave.
 function toast(msg, action, ms) {
@@ -47,13 +48,15 @@ function renderStatus(s) {
 }
 
 // ---------- Navegación ----------
-const SUB = new Set(['historial', 'ajustes']);
+const SUB = new Set(['historial', 'ajustes', 'producto']);
+let productoActual = null;
+function openProduct(clave) { productoActual = clave; go('producto'); }
 let back = 'resumen';
 function go(p) {
   if (SUB.has(p) && !SUB.has(page) && page !== 'setup') back = page;
   page = p;
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === p));
-  if (p !== 'setup') history.replaceState(null, '', '#' + p);
+  if (p !== 'setup') history.replaceState(null, '', '#' + p + (p === 'producto' && productoActual ? `/${productoActual}` : ''));
   window.scrollTo({ top: 0 });
   render();
 }
@@ -74,7 +77,7 @@ function render() {
   $('#page-title').textContent = TITLES[page] || 'Control de gastos';
   $('#btn-back').hidden = !SUB.has(page) || !connected;
   $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
-  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
@@ -150,14 +153,14 @@ function needData(fn) {
     if (!sync.hasData()) {
       return h('div', { class: 'card' }, h('h2', {}, 'Bajando los datos…'), h('p', { class: 'note' }, sync.status.state === 'offline' ? 'Sin conexión. Cuando vuelva el internet se bajan solos.' : 'Esto pasa solo la primera vez.'));
     }
-    const out = [].concat(fn({ sync, toast, go, rerender: render }));
+    const out = [].concat(fn({ sync, toast, go, rerender: render, openProduct, clave: productoActual }));
     const b = page === 'resumen' ? tokenBanner() : null;
     return b ? [b, ...out] : out;
   };
 }
 
 function viewProximamente() {
-  const fase = { productos: 3, recurrentes: 4, deudas: 4 }[page];
+  const fase = { recurrentes: 4, deudas: 4 }[page];
   const icon = document.querySelector(`.tab[data-page="${page}"] svg`)?.cloneNode(true);
   return h('div', { class: 'card coming' }, icon, h('h2', {}, TITLES[page]), h('p', { class: 'note' }, `Llega en la fase ${fase}. Los datos ya están guardados en el dispositivo.`));
 }
@@ -488,9 +491,10 @@ async function start() {
     } catch (e) { /* sin service worker: la app funciona igual con internet */ }
   }
   const ok = await sync.init();
-  const h0 = location.hash.slice(1);
+  let h0 = location.hash.slice(1);
+  if (h0.startsWith('producto/')) { productoActual = decodeURIComponent(h0.slice(9)); h0 = 'producto'; back = 'productos'; }
   const inicio = prefs.get('inicio', 'resumen');
-  page = ok ? (TITLES[h0] && !['setup', 'ajustes', 'historial'].includes(h0) ? h0 : (TITLES[inicio] ? inicio : 'resumen')) : 'setup';
+  page = ok ? (TITLES[h0] && !['setup', 'ajustes', 'historial'].includes(h0) && (h0 !== 'producto' || productoActual) ? h0 : (TITLES[inicio] ? inicio : 'resumen')) : 'setup';
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === page));
   render();
   renderStatus(sync.status);

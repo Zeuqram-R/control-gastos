@@ -145,11 +145,14 @@ export function catalogo(compras, productos) {
     const orden = filas.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || String(a.id).localeCompare(String(b.id)));
     const ultimos = [...groupBy(orden, (d) => d.supermercado)].map(([s, f]) => ({ s, p: Number(f[f.length - 1].precio_unitario), ref: refPrecio(f[f.length - 1], p) }));
     const mejor = ultimos.reduce((a, b) => (b.ref.v < a.ref.v ? b : a));
+    const peor = ultimos.reduce((a, b) => (b.ref.v > a.ref.v ? b : a));
     const first = Number(orden[0].precio_unitario), last = Number(orden[orden.length - 1].precio_unitario);
     const fechas = [...new Set(orden.map((d) => d10(d.fecha)))];
     const gaps = fechas.slice(1).map((f, i) => daysBetween(fechas[i], f));
     return {
-      clave, producto: p.producto || orden[orden.length - 1].producto, categoria: p.categoria || orden[0].categoria,
+      clave, producto: p.producto || orden[orden.length - 1].producto, grupo: p.grupo || p.producto || '', categoria: p.categoria || orden[0].categoria,
+      n_supers: ultimos.length, ahorro: peor.p - mejor.p, gasto_total: sum(orden, (d) => d.total), iva: Number(orden[orden.length - 1].iva_pct) || null,
+      otros_nombres: p.otros_nombres || [], alternativa: p.alternativa_1 || '',
       dueno: p.dueno || 'Casa', ubicacion: p.ubicacion || '', unidad: orden[0].unidad,
       perecedero: p.perecedero === true || p.perecedero === 'si', vida_util_dias: Number(p.vida_util_dias) || null,
       compras: fechas.length, primera: fechas[0], ultima: fechas[fechas.length - 1],
@@ -248,3 +251,35 @@ export function iva(compras, productos) {
 }
 
 export { sum, groupBy };
+
+// Productos comprados en más de un tipo de lugar, comparados por kilo, litro o unidad.
+export function compararLugares(compras, productos, lugares) {
+  const info = new Map(productos.map((p) => [p.clave, p]));
+  const tipo = new Map(lugares.map((l) => [l.nombre, l.tipo]));
+  const out = [];
+  for (const [clave, filas] of groupBy(compras, (d) => d.clave)) {
+    const porTipo = {};
+    for (const [lugar, fl] of groupBy(filas, (d) => d.supermercado)) {
+      const last = fl.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).pop();
+      const t = tipo.get(lugar) || 'Supermercado';
+      const r = refPrecio(last, info.get(clave));
+      if (!porTipo[t] || r.v < porTipo[t].v) porTipo[t] = { v: Math.round(r.v), u: r.u, lugar };
+    }
+    const tipos = Object.keys(porTipo);
+    if (tipos.length < 2) continue;
+    const best = tipos.reduce((a, b) => (porTipo[b].v < porTipo[a].v ? b : a));
+    const worst = tipos.reduce((a, b) => (porTipo[b].v > porTipo[a].v ? b : a));
+    const p = info.get(clave) || {};
+    out.push({ clave, producto: p.grupo || p.producto || filas[0].producto, porTipo, mejor: best, ahorro_pct: porTipo[worst].v ? (porTipo[worst].v - porTipo[best].v) / porTipo[worst].v : 0 });
+  }
+  return out.sort((a, b) => b.ahorro_pct - a.ahorro_pct);
+}
+
+// Cuánto duró cada compra hasta que se terminó (según los eventos).
+export function duraciones(compras, eventos, clave) {
+  const fechas = [...new Set(compras.filter((r) => r.clave === clave).map((r) => d10(r.fecha)))].sort();
+  return eventos.filter((e) => e.clave === clave && String(e.evento).toLowerCase() === 'terminado').map((e) => {
+    const desde = fechas.filter((f) => f <= d10(e.fecha)).pop();
+    return desde ? { desde, hasta: d10(e.fecha), dias: daysBetween(desde, e.fecha) } : null;
+  }).filter(Boolean);
+}

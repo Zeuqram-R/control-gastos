@@ -127,7 +127,7 @@ function secVencimientos(ctx, cat, eventos, hoy) {
     v.length ? h('ul', { class: 'rows' }, v.map((r) => {
       const dias = daysBetween(hoy, r.vence);
       const when = dias < 0 ? `Venció hace ${-dias} día${dias === -1 ? '' : 's'}` : dias === 0 ? 'Vence hoy' : dias === 1 ? 'Vence mañana' : `Vence en ${dias} días`;
-      return h('li', {},
+      return h('li', { class: 'tap', onclick: () => ctx.openProduct(r.clave) },
         thumb(sync, r.clave, { open: true, title: r.producto }),
         h('div', { class: 'main' }, r.producto, h('span', { class: 'sub' }, `${r.sobras ? `Sobras cocinadas el ${dayShort(r.desde)}` : `Comprado ${dayShort(r.ultima)}`} · dura ~${r.dias} días${r.ubicacion ? ` · ${r.ubicacion}` : ''}`)),
         h('span', { class: 'when', style: { color: dias <= 0 ? 'var(--bad)' : dias <= 2 ? 'var(--warn)' : 'var(--muted)' } }, when));
@@ -193,7 +193,7 @@ function secCompras(ctx, D) {
     list.replaceChildren(...vis.map((r) => {
       const ref = C.refPrecio(r, info.get(r.clave));
       const qty = r.unidad === 'kg' ? `${Number(r.cantidad).toFixed(3)} kg` : `${r.cantidad} ×`;
-      return h('li', {},
+      return h('li', { class: 'tap', onclick: () => ctx.openProduct(r.clave) },
         thumb(sync, r.clave, { open: true, title: r.producto }),
         h('div', { class: 'main' }, r.producto, h('span', { class: 'sub' }, `${dayShort(r.fecha)} · ${r.supermercado} · ${qty} ${crc(r.precio_unitario)}${r.unidad === 'kg' ? '/kg' : ''} · ${crc(ref.v)}/${ref.u}`)),
         h('span', { class: 'amt' }, crc(r.total)));
