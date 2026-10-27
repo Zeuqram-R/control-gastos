@@ -5,7 +5,7 @@ import { $, h, ago, tile } from './ui.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
@@ -154,10 +154,40 @@ function viewProximamente() {
   return h('div', { class: 'card coming' }, icon, h('h2', {}, TITLES[page]), h('p', { class: 'note' }, `Llega en la fase ${fase}. Los datos ya están guardados en el dispositivo.`));
 }
 
+// Tema por dispositivo: auto, claro u oscuro.
+const THEME_BG = { light: '#f4f5f3', dark: '#0f1412' };
+function getTheme() { try { return localStorage.getItem('tema') || 'auto'; } catch (e) { return 'auto'; } }
+function applyTheme(t) {
+  const root = document.documentElement;
+  if (t === 'light' || t === 'dark') root.dataset.theme = t; else delete root.dataset.theme;
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) {
+    const scheme = (m.getAttribute('media') || '').includes('dark') ? 'dark' : 'light';
+    m.setAttribute('content', THEME_BG[t === 'auto' ? scheme : t]);
+  }
+}
+function setTheme(t) { try { if (t === 'auto') localStorage.removeItem('tema'); else localStorage.setItem('tema', t); } catch (e) { /* solo esta vez */ } applyTheme(t); render(); }
+
+const ICON = {
+  auto: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/></svg>',
+  light: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>',
+  dark: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>',
+};
+
 function viewAjustes() {
   const s = sync.status;
   const c = sync.config;
+  const tema = getTheme();
+  const opt = (k, label) => {
+    const b = h('button', { type: 'button', 'aria-pressed': String(tema === k), onclick: () => setTheme(k) });
+    b.innerHTML = ICON[k];
+    b.append(label);
+    return b;
+  };
   return [
+    h('section', { class: 'card' },
+      h('h2', {}, 'Apariencia'),
+      h('p', { class: 'note' }, 'Auto sigue el modo claro u oscuro del aparato. Se guarda solo en este dispositivo.'),
+      h('div', { class: 'seg three' }, opt('auto', 'Auto'), opt('light', 'Claro'), opt('dark', 'Oscuro'))),
     h('section', { class: 'card' },
       h('h2', {}, 'Este dispositivo'),
       h('dl', { class: 'kv' },
@@ -315,6 +345,7 @@ function blockZoom() {
 
 async function start() {
   blockZoom();
+  applyTheme(getTheme());
   if ('serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.register('sw.js');
