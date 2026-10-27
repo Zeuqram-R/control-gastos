@@ -25,6 +25,7 @@ const ago = (iso) => {
   if (s < 86400) return `hace ${Math.round(s / 3600)} h`;
   return `hace ${Math.round(s / 86400)} d`;
 };
+const APP_VERSION = '1.1 (f)';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 // ---------- Estado ----------
@@ -210,7 +211,7 @@ function viewAjustes() {
         await sync.disconnect();
         go('setup');
       } }, 'Desconectar este dispositivo')),
-    h('p', { class: 'note', style: 'text-align:center' }, 'Versión fase 1.1'),
+    h('p', { class: 'note', style: 'text-align:center' }, `Versión ${APP_VERSION}`),
     h('p', { class: 'note diag' }, diagText()),
   ];
 }

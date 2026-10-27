@@ -1,6 +1,6 @@
 // Guarda la app en el dispositivo para que abra sin internet.
 // Los datos no pasan por aquí: viven en IndexedDB y se sincronizan con GitHub desde la app.
-const VERSION = 'v1-2026-10-27e';
+const VERSION = 'v1-2026-10-27f';
 const SHELL = [
   './',
   './index.html',
@@ -17,8 +17,9 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
+  // cache: 'reload' evita guardar archivos viejos del caché del navegador (GitHub Pages guarda 10 min).
   // La versión nueva entra sola al abrir la app (sin tener que tocar "Actualizar").
-  event.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
