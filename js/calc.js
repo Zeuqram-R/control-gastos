@@ -88,7 +88,7 @@ export function saldosCRC(saldos, tc) {
 
 // Próxima fecha de pago de un recurrente desde una fecha dada.
 export function proximoPago(f, desde) {
-  if (!f.dia || ['cancelado', 'sin costo'].includes(f.estado)) return null;
+  if (!f.dia || ['cancelado', 'sin costo', 'terminado'].includes(f.estado)) return null;
   const okRango = (d) => ((!f.hasta || d <= d10(f.hasta)) && (!f.desde || d >= d10(f.desde)) ? d : null);
   if (f.desde && desde < d10(f.desde)) desde = d10(f.desde);
   const [y, m] = desde.split('-').map(Number);
@@ -108,7 +108,7 @@ export function balanceQuincena(D, hoy) {
   const saldo = sum(saldos, (s) => s.crc);
   const pagRec = new Map(D.pagos_recurrentes.map((p) => [p.id, p]));
   const pagDeu = new Map(D.pagos_deudas.map((p) => [p.id, p]));
-  const activos = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo'].includes(f.estado));
+  const activos = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado));
   const porPagar = activos.map((f) => ({ ...f, prox: proximoPago(f, hoy) }))
     .filter((f) => f.prox && f.prox <= q.fin && !pagRec.has(`${f.id}_${f.prox}`));
   const deudas = deudasCRC(D.deudas, tc);
