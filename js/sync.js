@@ -16,7 +16,7 @@ export function applyOps(rows, ops) {
   return out;
 }
 
-export function createSync({ onChange, onStatus }) {
+export function createSync({ onChange, onStatus, onLog }) {
   let cfg = null;
   let client = null;
   const files = new Map(); // path -> { sha, data }
@@ -24,6 +24,9 @@ export function createSync({ onChange, onStatus }) {
   let queue = [];
   let syncing = false;
   let again = false;
+  let log = [];
+  let retryTimer = null;
+  let retryDelay = 4000;
   const status = { state: 'idle', lastSync: null, pending: 0, message: '' };
 
   const emitStatus = (patch) => {
@@ -34,9 +37,26 @@ export function createSync({ onChange, onStatus }) {
 
   async function saveQueue() { await store.set('queue', 'ops', queue); }
 
+  // Historial de lo que hizo este dispositivo (verde = funcionó, rojo = falló).
+  async function addLog(entry) {
+    const now = new Date().toISOString();
+    const last = log[0];
+    if (!entry.ok && last && !last.ok && last.titulo === entry.titulo) {
+      last.at = now; last.veces = (last.veces || 1) + 1; last.detalle = entry.detalle;
+    } else {
+      log.unshift({ id: `L${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, at: now, ...entry });
+      log = log.slice(0, 300);
+    }
+    await store.set('config', 'log', log);
+    onLog && onLog();
+  }
+  const nombre = (path) => path.replace(DATA_PREFIX, '').replace(/\.json$/, '').replace(/_/g, ' ');
+
   const api = {
     get config() { return cfg; },
     get status() { return { ...status }; },
+    get log() { return log.slice(); },
+    get queue() { return queue.slice(); },
 
     async init() {
       cfg = (await store.get('config', 'cfg')) || null;
@@ -48,6 +68,7 @@ export function createSync({ onChange, onStatus }) {
       for (const [p, s] of Object.entries(sh)) shas.set(p, s);
       queue = (await store.get('queue', 'ops')) || [];
       status.lastSync = (await store.get('config', 'lastSync')) || null;
+      log = (await store.get('config', 'log')) || [];
       emitStatus({});
       return !!cfg;
     },
@@ -64,7 +85,7 @@ export function createSync({ onChange, onStatus }) {
 
     async disconnect() {
       await store.clearAll();
-      cfg = null; client = null; files.clear(); shas.clear(); queue = [];
+      cfg = null; client = null; files.clear(); shas.clear(); queue = []; log = [];
       emitStatus({ state: 'idle', lastSync: null });
       emitChange();
     },
@@ -101,17 +122,32 @@ export function createSync({ onChange, onStatus }) {
       if (!client) return;
       if (syncing) { again = true; return; }
       syncing = true;
-      emitStatus({ state: 'syncing', message: '' });
+      clearTimeout(retryTimer);
+      emitStatus({ state: 'checking', message: status.state === 'offline' ? 'reintento' : '' });
       try {
         await flush();
+        emitStatus({ state: 'checking', message: '' });
         await pull();
         status.lastSync = new Date().toISOString();
         await store.set('config', 'lastSync', status.lastSync);
+        retryDelay = 4000;
         emitStatus({ state: 'idle', message: '' });
       } catch (e) {
         const offline = e instanceof GitHubError && e.status === 0;
         const auth = e instanceof GitHubError && (e.status === 401 || e.status === 403);
-        emitStatus({ state: offline ? 'offline' : 'error', message: auth ? 'El token ya no sirve. Creá uno nuevo en Ajustes.' : (offline ? '' : e.message) });
+        const message = auth ? 'El token ya no sirve. Creá uno nuevo en Ajustes.' : (offline ? '' : e.message);
+        emitStatus({ state: offline ? 'offline' : 'error', message });
+        await addLog({
+          ok: false,
+          tipo: offline ? 'conexion' : 'error',
+          titulo: offline ? 'Sin conexión' : 'No se pudo sincronizar',
+          detalle: (offline ? 'No se pudo llegar a GitHub.' : message) + (queue.length ? ` ${queue.length} cambio(s) esperan para subir.` : ''),
+        });
+        // Reintenta solo, más seguido al principio (4 s, 8 s, 16 s… hasta 1 min).
+        if (!auth) {
+          retryTimer = setTimeout(() => api.sync(), retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 60000);
+        }
       } finally {
         syncing = false;
         if (again) { again = false; api.sync(); }
@@ -135,32 +171,50 @@ export function createSync({ onChange, onStatus }) {
   };
 
   async function pull() {
+    const first = files.size === 0;
     const tree = await client.tree();
-    const seen = new Set();
     const shaMap = {};
-    let changed = false;
+    const toGet = [];
+    const seen = new Set();
     for (const f of tree) {
       shaMap[f.path] = f.sha;
       if (!f.path.startsWith(DATA_PREFIX) || !f.path.endsWith('.json')) continue;
       seen.add(f.path);
-      if (files.get(f.path)?.sha === f.sha) continue;
+      if (files.get(f.path)?.sha !== f.sha) toGet.push(f);
+    }
+    let changed = false;
+    for (let i = 0; i < toGet.length; i++) {
+      const f = toGet[i];
+      emitStatus({ state: 'downloading', message: toGet.length > 1 ? `Bajando ${i + 1} de ${toGet.length}` : `Bajando ${nombre(f.path)}` });
       const data = JSON.parse(b64ToText(await client.blob(f.sha)));
       const v = { sha: f.sha, data };
       files.set(f.path, v);
       await store.set('files', f.path, v);
       changed = true;
     }
+    const removed = [];
     for (const path of [...files.keys()]) {
-      if (!seen.has(path)) { files.delete(path); await store.del('files', path); changed = true; }
+      if (!seen.has(path)) { files.delete(path); await store.del('files', path); removed.push(path); changed = true; }
     }
     shas.clear();
     for (const [p, s] of Object.entries(shaMap)) shas.set(p, s);
     await store.set('config', 'shas', shaMap);
+    if (first && toGet.length) {
+      await addLog({ ok: true, tipo: 'bajada', titulo: 'Bajó todos los datos', detalle: `${toGet.length} archivos` });
+    } else {
+      for (const f of toGet) {
+        let quien = null;
+        try { quien = await client.lastCommit(f.path); } catch (e) { /* opcional */ }
+        await addLog({ ok: true, tipo: 'bajada', titulo: `Bajó cambios en ${nombre(f.path)}`, detalle: quien ? quien.message : '' });
+      }
+      for (const p of removed) await addLog({ ok: true, tipo: 'bajada', titulo: `Se quitó ${nombre(p)}`, detalle: '' });
+    }
     if (changed) emitChange();
   }
 
   async function flush() {
     while (queue.length) {
+      emitStatus({ state: 'uploading', message: queue.length > 1 ? `Subiendo ${queue.length} cambios` : 'Subiendo 1 cambio' });
       const path = queue[0].file;
       const ops = queue.filter((o) => o.file === path);
       let done = false;
@@ -192,6 +246,12 @@ export function createSync({ onChange, onStatus }) {
       const uids = new Set(ops.map((o) => o.uid));
       queue = queue.filter((o) => !uids.has(o.uid));
       await saveQueue();
+      await addLog({
+        ok: true,
+        tipo: 'subida',
+        titulo: `Subió ${ops.length === 1 ? '1 cambio' : `${ops.length} cambios`} en ${nombre(path)}`,
+        detalle: ops.map((o) => o.summary).filter(Boolean).join(' · '),
+      });
       emitStatus({});
     }
   }

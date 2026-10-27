@@ -28,9 +28,9 @@ const ago = (iso) => {
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 // ---------- Estado ----------
-const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s) });
+const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
-const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', setup: 'Control de gastos' };
+const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', setup: 'Control de gastos' };
 
 function toast(msg, action) {
   const t = $('#toast');
@@ -46,32 +46,32 @@ function renderStatus(s) {
   if (!sync.config) { pill.hidden = true; return; }
   pill.hidden = false;
   let state = s.state, text;
-  if (s.state === 'syncing') text = 'Sincronizando…';
+  if (s.state === 'checking') {
+    if (s.message === 'reintento') { state = 'offline'; text = s.pending ? `Sin conexión · ${s.pending} por subir` : 'Sin conexión · reintentando'; }
+    else { state = 'syncing'; text = 'Revisando cambios…'; }
+  } else if (s.state === 'uploading' || s.state === 'downloading') { state = 'syncing'; text = `${s.message}…`; }
   else if (s.state === 'offline') text = s.pending ? `Sin conexión · ${s.pending} por subir` : 'Sin conexión';
   else if (s.state === 'error') text = 'Error al sincronizar';
   else if (s.pending) { state = 'pending'; text = `${s.pending} por subir`; }
   else text = `Al día · ${ago(s.lastSync)}`;
   pill.dataset.state = state;
+  pill.dataset.dir = s.state === 'uploading' ? 'up' : s.state === 'downloading' ? 'down' : '';
   $('#sync-text').textContent = text;
-  pill.title = s.message || '';
-  if (page === 'ajustes') render();
+  pill.setAttribute('aria-label', `${text}. Ver historial`);
+  if (page === 'ajustes' || page === 'historial') render();
 }
 
 // ---------- Navegación ----------
 function go(p) {
   page = p;
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === p));
-  if (p !== 'ajustes' && p !== 'setup') history.replaceState(null, '', '#' + p);
+  if (p !== 'setup') history.replaceState(null, '', '#' + p);
   window.scrollTo({ top: 0 });
   render();
 }
 for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => go(t.dataset.page));
 $('#btn-ajustes').addEventListener('click', () => go(page === 'ajustes' ? 'resumen' : 'ajustes'));
-$('#sync-pill').addEventListener('click', () => {
-  const s = sync.status;
-  if (s.state === 'error' && s.message) toast(s.message);
-  sync.sync();
-});
+$('#sync-pill').addEventListener('click', () => go('historial'));
 
 // ---------- Páginas ----------
 function render() {
@@ -81,7 +81,7 @@ function render() {
   $('#btn-ajustes').hidden = !connected;
   if (!connected) page = 'setup';
   $('#page-title').textContent = TITLES[page] || 'Control de gastos';
-  const view = { setup: viewSetup, resumen: viewResumen, ajustes: viewAjustes }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: viewResumen, ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
@@ -172,37 +172,14 @@ function viewResumen() {
       tile('Compras registradas', String(compras.length), 'artículos de facturas'),
       tile('Productos', String(productos.length), 'en el catálogo'),
       tile('Deudas pendientes', String(pendientes.length), `${deudas.length - pendientes.length} pagada(s)`)),
-    viewNotas(),
     h('div', { class: 'card' },
       h('h2', {}, 'Fase 1: la base'),
-      h('p', { class: 'note' }, 'Lo demás del control llega en las próximas fases. Por ahora, esto sirve para probar que la app abre sin internet y que lo que hacés en un dispositivo aparece en los otros.')),
+      h('p', { class: 'note' }, 'El resumen completo, la lista y lo demás llegan en las próximas fases. Jalá hacia abajo para actualizar, y tocá el estado de arriba para ver el historial.')),
   ];
 }
 
 function tile(lbl, num, sub) {
   return h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, lbl), h('div', { class: 'num' }, num), h('div', { class: 'sub' }, sub));
-}
-
-function viewNotas() {
-  const notas = sync.data('notas').slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  const pend = new Set(sync.pendingFor('notas').map((o) => o.kind === 'delete' ? o.id : o.record.id));
-  const input = h('input', { class: 'input', id: 'in-nota', type: 'text', placeholder: 'Escribí algo y agregalo', maxlength: '140' });
-  const add = async () => {
-    const texto = input.value.trim();
-    if (!texto) return;
-    input.value = '';
-    const id = `N${Date.now().toString(36)}`;
-    await sync.mutate('notas', { kind: 'upsert', record: { id, texto, autor: sync.config.persona, dispositivo: sync.config.dispositivo, fecha: new Date().toISOString() } }, `nota "${texto.slice(0, 40)}"`);
-  };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
-  return h('section', { class: 'card' },
-    h('h2', {}, 'Prueba de sincronización'),
-    h('p', { class: 'note' }, 'Agregá una nota aquí y abrí la app en otro dispositivo: debería aparecer. Probá también en modo avión: queda "por subir" y se sube sola al volver el internet.'),
-    h('div', { class: 'row-add' }, input, h('button', { class: 'btn', type: 'button', onclick: add }, 'Agregar')),
-    notas.length ? notas.map((n) => h('div', { class: 'list-item' + (pend.has(n.id) ? ' pending' : '') },
-      h('div', { class: 'main' }, n.texto, h('span', { class: 'sub' }, `${n.autor} · ${n.dispositivo} · ${new Date(n.fecha).toLocaleString('es-CR', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`)),
-      h('button', { class: 'x-btn', type: 'button', 'aria-label': 'Borrar nota', onclick: () => sync.mutate('notas', { kind: 'delete', id: n.id }, 'borra una nota') }, '✕')))
-      : h('div', { class: 'empty' }, 'Todavía no hay notas.'));
 }
 
 function viewProximamente() {
@@ -222,7 +199,7 @@ function viewAjustes() {
         h('dt', {}, 'Dispositivo'), h('dd', {}, c.dispositivo),
         h('dt', {}, 'Última sincronización'), h('dd', {}, s.lastSync ? new Date(s.lastSync).toLocaleString('es-CR') : 'nunca'),
         h('dt', {}, 'Cambios por subir'), h('dd', {}, String(s.pending)),
-        h('dt', {}, 'Estado'), h('dd', {}, { idle: 'Al día', syncing: 'Sincronizando', offline: 'Sin conexión', error: 'Error' }[s.state] || s.state)),
+        h('dt', {}, 'Estado'), h('dd', {}, { idle: 'Al día', checking: 'Revisando', uploading: 'Subiendo', downloading: 'Bajando', offline: 'Sin conexión', error: 'Error' }[s.state] || s.state)),
       s.message ? h('p', { class: 'error-msg' }, s.message) : null,
       h('button', { class: 'btn block', type: 'button', onclick: () => sync.sync() }, 'Sincronizar ahora')),
     h('section', { class: 'card' },
@@ -233,8 +210,121 @@ function viewAjustes() {
         await sync.disconnect();
         go('setup');
       } }, 'Desconectar este dispositivo')),
-    h('p', { class: 'note', style: 'text-align:center' }, 'Versión fase 1'),
+    h('p', { class: 'note', style: 'text-align:center' }, 'Versión fase 1.1'),
+    h('p', { class: 'note diag' }, diagText()),
   ];
+}
+
+const DIA = new Intl.DateTimeFormat('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
+const HORA = new Intl.DateTimeFormat('es-CR', { hour: 'numeric', minute: '2-digit' });
+
+function viewHistorial() {
+  const s = sync.status;
+  const cola = sync.queue;
+  const log = sync.log;
+  const busy = ['checking', 'uploading', 'downloading'].includes(s.state) && s.message !== 'reintento';
+  const out = [];
+  out.push(h('section', { class: 'card' },
+    h('div', { class: 'hist-head' },
+      h('div', {},
+        h('h2', {}, busy ? $('#sync-text').textContent : s.state === 'offline' ? 'Sin conexión' : s.state === 'error' ? 'Error al sincronizar' : 'Al día'),
+        h('p', { class: 'note', style: 'margin:0' }, `Última sincronización: ${s.lastSync ? `${ago(s.lastSync)} (${HORA.format(new Date(s.lastSync))})` : 'nunca'}`)),
+      h('button', { class: 'btn', type: 'button', disabled: busy, onclick: () => sync.sync() }, busy ? 'Sincronizando…' : 'Sincronizar')),
+    s.message && s.message !== 'reintento' && s.state === 'error' ? h('p', { class: 'error-msg', style: 'margin:12px 0 0' }, s.message) : null));
+  if (cola.length) {
+    out.push(h('section', { class: 'card' },
+      h('h2', {}, `Esperando para subir (${cola.length})`),
+      h('p', { class: 'note' }, 'Ya están guardados en este dispositivo. Se suben solos cuando haya internet.'),
+      h('ul', { class: 'hist' }, cola.map((o) => h('li', {},
+        h('span', { class: 'hdot wait' }),
+        h('div', { class: 'main' }, o.summary || 'Cambio', h('span', { class: 'sub' }, `${o.file.replace('data/', '').replace('.json', '').replace(/_/g, ' ')} · ${HORA.format(new Date(o.at))}`)))))));
+  }
+  if (!log.length) {
+    out.push(h('section', { class: 'card' }, h('div', { class: 'empty' }, 'Todavía no hay movimientos en este dispositivo.')));
+    return out;
+  }
+  const grupos = new Map();
+  for (const e of log) {
+    const k = DIA.format(new Date(e.at));
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(e);
+  }
+  for (const [dia, items] of grupos) {
+    out.push(h('section', { class: 'card' },
+      h('h3', { class: 'hist-day' }, dia.charAt(0).toUpperCase() + dia.slice(1)),
+      h('ul', { class: 'hist' }, items.map((e) => h('li', {},
+        h('span', { class: 'hdot ' + (e.ok ? 'ok' : 'bad'), title: e.ok ? 'Funcionó' : 'Falló' }),
+        h('div', { class: 'main' },
+          h('span', { class: 'ttl' }, e.titulo, e.veces > 1 ? h('span', { class: 'veces' }, ` ×${e.veces}`) : null),
+          e.detalle ? h('span', { class: 'sub' }, e.detalle) : null),
+        h('span', { class: 'time' }, HORA.format(new Date(e.at))))))));
+  }
+  out.push(h('p', { class: 'note', style: 'text-align:center' }, 'Verde: funcionó. Rojo: falló (se reintenta solo). Gris: esperando internet.'));
+  return out;
+}
+
+// Algunos iPhone/iPad dejan la barra de abajo más arriba de lo debido cuando la app está instalada.
+// Se mide el espacio real de la pantalla y se corrige.
+function fixBottom() {
+  const probe = $('#vp-probe');
+  if (!probe) return;
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const landscape = innerWidth > innerHeight;
+  const sh = landscape ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+  const sw = landscape ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  const bottom = probe.getBoundingClientRect().bottom;
+  let gap = 0;
+  if (standalone && Math.abs(innerWidth - sw) < 2) {
+    const g = Math.round(sh - bottom);
+    if (g > 2 && g < 90) gap = g;
+  }
+  document.documentElement.style.setProperty('--vp-gap', gap + 'px');
+  fixBottom.info = { sh, bottom: Math.round(bottom), ih: innerHeight, gap, standalone: !!standalone };
+}
+
+function diagText() {
+  const i = fixBottom.info || {};
+  return `Pantalla ${i.sh} · visible ${i.bottom} · ajuste ${i.gap}px${i.standalone ? ' · instalada' : ''}`;
+}
+
+// Jalar hacia abajo para actualizar.
+function setupPullToRefresh() {
+  const ind = $('#ptr');
+  const MAX = 90, TRIGGER = 64;
+  let startY = null, dy = 0, active = false;
+  const set = (d, anim) => {
+    ind.style.transition = anim ? 'transform .25s, opacity .25s' : 'none';
+    ind.style.transform = `translate(-50%, ${Math.min(d, MAX) - 48}px) rotate(${d * 3}deg)`;
+    ind.style.opacity = String(Math.min(d / TRIGGER, 1));
+    ind.classList.toggle('ready', d >= TRIGGER);
+  };
+  addEventListener('touchstart', (e) => {
+    if (!sync.config || window.scrollY > 0 || e.touches.length !== 1 || ind.classList.contains('spin')) { startY = null; return; }
+    startY = e.touches[0].clientY; dy = 0; active = false;
+  }, { passive: true });
+  addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    const d = e.touches[0].clientY - startY;
+    if (d <= 0 && !active) { startY = null; return; }
+    if (window.scrollY > 0) { startY = null; return; }
+    active = true;
+    dy = Math.max(0, d * 0.55);
+    if (e.cancelable) e.preventDefault();
+    set(dy, false);
+  }, { passive: false });
+  addEventListener('touchend', async () => {
+    if (startY == null || !active) { startY = null; return; }
+    startY = null;
+    if (dy >= TRIGGER) {
+      set(TRIGGER, true);
+      ind.classList.add('spin');
+      const t0 = Date.now();
+      await sync.sync();
+      await new Promise((r) => setTimeout(r, Math.max(0, 500 - (Date.now() - t0))));
+      ind.classList.remove('spin');
+    }
+    set(0, true);
+  });
 }
 
 // ---------- Arranque ----------
@@ -261,9 +351,16 @@ async function start() {
   render();
   renderStatus(sync.status);
   if (ok) sync.sync();
+  fixBottom();
+  addEventListener('resize', fixBottom);
+  addEventListener('orientationchange', () => setTimeout(fixBottom, 300));
+  setTimeout(fixBottom, 500);
+  setupPullToRefresh();
   window.addEventListener('online', () => sync.sync());
+  window.addEventListener('focus', () => sync.sync());
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync.sync(); });
-  setInterval(() => { if (document.visibilityState === 'visible') sync.sync(); }, 60000);
+  setInterval(() => { if (document.visibilityState === 'visible') sync.sync(); }, 30000);
   setInterval(() => renderStatus(sync.status), 30000);
 }
+window.__app = { sync };
 start();

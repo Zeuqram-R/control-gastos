@@ -78,6 +78,11 @@ export function createClient(token) {
       const r = await call(`${base}/contents/${encodeURI(path)}?ref=${REPO.branch}`);
       return { sha: r.sha, b64: r.content };
     },
+    // Último cambio de un archivo: quién lo hizo y desde dónde (va en el mensaje del commit).
+    async lastCommit(path) {
+      const r = await call(`${base}/commits?path=${encodeURIComponent(path)}&sha=${REPO.branch}&per_page=1`);
+      return r[0] ? { message: r[0].commit.message.split('\n')[0], at: r[0].commit.author.date } : null;
+    },
     async putFile(path, b64, sha, message) {
       const r = await call(`${base}/contents/${encodeURI(path)}`, {
         method: 'PUT',
