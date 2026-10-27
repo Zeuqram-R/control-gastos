@@ -147,7 +147,7 @@ a { color: var(--accent); }
 .setup .brand h2 { font-size: 22px; margin: 0; }
 
 /* Jalar para actualizar */
-.ptr { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 64px); z-index: 25; width: 40px; height: 40px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); display: grid; place-items: center; opacity: 0; transform: translate(-50%, -48px); pointer-events: none; color: var(--muted); }
+.ptr { position: fixed; left: 50%; top: 64px; z-index: 25; width: 40px; height: 40px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); display: grid; place-items: center; opacity: 0; transform: translate(-50%, -48px); pointer-events: none; color: var(--muted); }
 .ptr svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ptr.ready { color: var(--accent); }
 .ptr.spin { color: var(--accent); }

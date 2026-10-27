@@ -1,6 +1,6 @@
 // Guarda la app en el dispositivo para que abra sin internet.
 // Los datos no pasan por aquí: viven en IndexedDB y se sincronizan con GitHub desde la app.
-const VERSION = 'v1-2026-10-27d';
+const VERSION = 'v1-2026-10-27e';
 const SHELL = [
   './',
   './index.html',

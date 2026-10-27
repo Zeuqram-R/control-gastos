@@ -288,11 +288,19 @@ function diagText() {
 // Jalar hacia abajo para actualizar.
 function setupPullToRefresh() {
   const ind = $('#ptr');
-  const MAX = 90, TRIGGER = 64;
+  const main = $('#main');
+  const MAX = 110, TRIGGER = 64, HOLD = 56;
   let startY = null, dy = 0, active = false;
+  // La pantalla entera baja con el dedo y el ícono aparece en el espacio que queda arriba.
   const set = (d, anim) => {
-    ind.style.transition = anim ? 'transform .25s, opacity .25s' : 'none';
-    ind.style.transform = `translate(-50%, ${Math.min(d, MAX) - 48}px) rotate(${d * 3}deg)`;
+    const tr = anim ? 'transform .3s cubic-bezier(.2,.8,.2,1), opacity .3s' : 'none';
+    const top = $('.topbar').getBoundingClientRect().bottom;
+    ind.style.top = `${top}px`;
+    ind.style.transition = tr;
+    main.style.transition = tr;
+    const m = Math.min(d, MAX);
+    main.style.transform = m > 0 ? `translateY(${m}px)` : '';
+    ind.style.transform = `translate(-50%, ${m / 2 - 20}px) rotate(${d * 3}deg)`;
     ind.style.opacity = String(Math.min(d / TRIGGER, 1));
     ind.classList.toggle('ready', d >= TRIGGER);
   };
@@ -314,7 +322,7 @@ function setupPullToRefresh() {
     if (startY == null || !active) { startY = null; return; }
     startY = null;
     if (dy >= TRIGGER) {
-      set(TRIGGER, true);
+      set(HOLD, true);
       ind.classList.add('spin');
       const t0 = Date.now();
       await sync.sync();
