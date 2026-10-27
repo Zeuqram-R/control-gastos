@@ -6,20 +6,23 @@ import { prefs } from './prefs.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 
-const APP_VERSION = '2.5';
+const APP_VERSION = '2.6';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
 const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', setup: 'Control de gastos' };
 
-function toast(msg, action) {
+// Aviso abajo: aparece y se desvanece suave.
+function toast(msg, action, ms) {
   const t = $('#toast');
+  const hide = () => { t.classList.add('out'); clearTimeout(toast.fade); toast.fade = setTimeout(() => { t.hidden = true; }, 450); };
   t.replaceChildren(msg);
-  if (action) t.append(h('button', { type: 'button', onclick: () => { t.hidden = true; action.fn(); } }, action.label));
+  if (action) t.append(h('button', { type: 'button', onclick: () => { hide(); action.fn(); } }, action.label));
+  clearTimeout(toast.timer); clearTimeout(toast.fade);
+  t.classList.remove('out');
   t.hidden = false;
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { t.hidden = true; }, action ? 12000 : 3500);
+  toast.timer = setTimeout(hide, ms || (action ? 12000 : 3500));
 }
 
 function renderStatus(s) {
@@ -198,7 +201,7 @@ const EYE = {
 $('#btn-eye').addEventListener('click', () => {
   prefs.set('ocultar', !prefs.get('ocultar', false));
   applyPrefs(); render();
-  toast(privacy.hide ? 'Montos ocultos.' : 'Montos visibles.');
+  toast(privacy.hide ? 'Montos ocultos' : 'Montos visibles', null, 3000);
 });
 
 const MS_DIA = 864e5;
@@ -281,10 +284,6 @@ function viewAjustes() {
       h('div', { class: 'field', style: { marginTop: '16px', marginBottom: '0' } },
         h('label', {}, 'Tamaño de letra'),
         seg([['normal', 'Normal'], ['grande', 'Grande'], ['mayor', 'Más grande']], prefs.get('letra', 'normal'), (k) => { prefs.set('letra', k); applyPrefs(); render(); }, 'three'))),
-
-    h('section', { class: 'card' },
-      h('h2', {}, 'Privacidad'),
-      sw('aj-ocultar', 'Ocultar montos', 'Los montos salen como ₡•••••. También se cambia con el ojo de arriba, en cualquier página.', prefs.get('ocultar', false), (v) => { prefs.set('ocultar', v); applyPrefs(); render(); })),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Este dispositivo'),
