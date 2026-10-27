@@ -258,3 +258,10 @@ details.pp[open] summary::before { transform: rotate(90deg); }
 .lista-ayuda b { color: var(--fg); font-weight: 600; }
 .more { margin-top: 8px; width: 100%; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--accent); font-weight: 600; cursor: pointer; }
 .rows li.more-li { border-bottom: 0; padding-bottom: 0; }
+.topbar-left { display: flex; align-items: center; gap: 8px; flex: none; }
+.topbar .topbar-right { flex: 0 1 auto; min-width: 0; }
+.topbar .sync-pill { max-width: 100%; }
+.back-btn svg { stroke-width: 2.2; }
+.hist-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 18px; font-size: 13px; color: var(--muted); padding: 4px 0 8px; }
+.hist-legend > span { display: inline-flex; align-items: center; gap: 8px; }
+.hist-legend .hdot { margin-top: 0; }

@@ -5,7 +5,7 @@ import { $, h, ago, tile } from './ui.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 
 // ---------- Estado ----------
 const sync = createSync({ onChange: () => render(), onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
@@ -42,7 +42,10 @@ function renderStatus(s) {
 }
 
 // ---------- Navegación ----------
+const SUB = new Set(['historial', 'ajustes']);
+let back = 'resumen';
 function go(p) {
+  if (SUB.has(p) && !SUB.has(page) && page !== 'setup') back = page;
   page = p;
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === p));
   if (p !== 'setup') history.replaceState(null, '', '#' + p);
@@ -50,8 +53,10 @@ function go(p) {
   render();
 }
 for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => go(t.dataset.page));
-$('#btn-ajustes').addEventListener('click', () => go(page === 'ajustes' ? 'resumen' : 'ajustes'));
-$('#sync-pill').addEventListener('click', () => go('historial'));
+// Ajustes e Historial se abren encima de la página donde estabas; la flecha o el mismo botón te regresan.
+$('#btn-ajustes').addEventListener('click', () => go(page === 'ajustes' ? back : 'ajustes'));
+$('#sync-pill').addEventListener('click', () => go(page === 'historial' ? back : 'historial'));
+$('#btn-back').addEventListener('click', () => go(back));
 
 // ---------- Páginas ----------
 function render() {
@@ -61,6 +66,8 @@ function render() {
   $('#btn-ajustes').hidden = !connected;
   if (!connected) page = 'setup';
   $('#page-title').textContent = TITLES[page] || 'Control de gastos';
+  $('#btn-back').hidden = !SUB.has(page) || !connected;
+  $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
   const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
@@ -218,7 +225,10 @@ function viewHistorial() {
           e.detalle ? h('span', { class: 'sub' }, e.detalle) : null),
         h('span', { class: 'time' }, HORA.format(new Date(e.at))))))));
   }
-  out.push(h('p', { class: 'note', style: 'text-align:center' }, 'Verde: funcionó. Rojo: falló (se reintenta solo). Gris: esperando internet.'));
+  out.push(h('div', { class: 'hist-legend' },
+    h('span', {}, h('span', { class: 'hdot ok' }), 'Funcionó'),
+    h('span', {}, h('span', { class: 'hdot bad' }), 'Falló (reintenta solo)'),
+    h('span', {}, h('span', { class: 'hdot wait' }), 'Esperando internet')));
   return out;
 }
 
@@ -249,7 +259,7 @@ function setupPullToRefresh() {
   const ind = $('#ptr');
   const main = $('#main');
   const MAX = 110, TRIGGER = 64, HOLD = 56;
-  let startY = null, dy = 0, active = false;
+  let startY = null, startX = 0, dy = 0, active = false;
   // La pantalla entera baja con el dedo y el ícono aparece en el espacio que queda arriba.
   const set = (d, anim) => {
     const tr = anim ? 'transform .3s cubic-bezier(.2,.8,.2,1), opacity .3s' : 'none';
@@ -264,13 +274,16 @@ function setupPullToRefresh() {
     ind.classList.toggle('ready', d >= TRIGGER);
   };
   addEventListener('touchstart', (e) => {
-    if (!sync.config || window.scrollY > 0 || e.touches.length !== 1 || ind.classList.contains('spin')) { startY = null; return; }
-    startY = e.touches[0].clientY; dy = 0; active = false;
+    // Desde la fila de botones (o cualquier cosa que se desliza de lado) no se jala para actualizar.
+    const fromSide = e.target instanceof Element && e.target.closest('.chips, .no-ptr');
+    if (!sync.config || fromSide || window.scrollY > 0 || e.touches.length !== 1 || ind.classList.contains('spin')) { startY = null; return; }
+    startY = e.touches[0].clientY; startX = e.touches[0].clientX; dy = 0; active = false;
   }, { passive: true });
   addEventListener('touchmove', (e) => {
     if (startY == null) return;
     const d = e.touches[0].clientY - startY;
-    if (d <= 0 && !active) { startY = null; return; }
+    const dx = Math.abs(e.touches[0].clientX - startX);
+    if (!active && (d <= 0 || dx > d)) { startY = null; return; } // gesto de lado: no es para actualizar
     if (window.scrollY > 0) { startY = null; return; }
     active = true;
     dy = Math.max(0, d * 0.55);

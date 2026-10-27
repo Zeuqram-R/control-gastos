@@ -20,7 +20,10 @@
 <body>
 <div id="app">
   <header class="topbar">
-    <h1 id="page-title">Control de gastos</h1>
+    <div class="topbar-left">
+      <button class="icon-btn back-btn" id="btn-back" type="button" aria-label="Regresar" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h1 id="page-title">Control de gastos</h1>
+    </div>
     <div class="topbar-right">
       <button class="sync-pill" id="sync-pill" type="button" hidden><span class="dot"></span><svg class="arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span id="sync-text">—</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
       <button class="icon-btn" id="btn-ajustes" type="button" aria-label="Ajustes" hidden>
