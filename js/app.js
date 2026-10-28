@@ -18,7 +18,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.15';
+const APP_VERSION = '5.16';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -641,7 +641,7 @@ function setupSwipeBack() {
   };
   const limpiar = () => {
     if (!g) return;
-    clearTimeout(g.reloj);
+    clearTimeout(g.reloj); cancelAnimationFrame(g.raf);
     g.card?.remove(); g.under?.remove();
     // Si se canceló, los nodos de la página guardada vuelven a quedar guardados (fuera de la pantalla).
     if (g.nodos && guardada) guardada.nodos = g.nodos;
@@ -661,14 +661,29 @@ function setupSwipeBack() {
     g.card = capa('swipe-card', titulo, [...main.childNodes].map((n) => n.cloneNode(true)), window.scrollY, true);
     for (const x of g.card.querySelectorAll('[id]')) x.removeAttribute('id');
     document.body.append(g.under, g.card);
+    pintar(0, false);
+  };
+  // Pinta la posición: la tarjeta sigue al dedo y la página de abajo se asoma con un leve desplazamiento (como iOS).
+  const pintar = (x, anim, ms) => {
+    const W = innerWidth, k = Math.min(1, Math.max(0, x / W));
+    const tr = anim ? `transform ${ms}ms cubic-bezier(.22,.9,.32,1), box-shadow ${ms}ms` : 'none';
+    g.card.style.transition = tr;
+    g.card.style.transform = `translate3d(${x}px,0,0)`;
+    g.card.style.boxShadow = `-1px 0 0 var(--line), ${6 + 10 * (1 - k)}px 0 ${18 + 22 * (1 - k)}px rgba(0,0,0,${(0.38 * (1 - k)).toFixed(3)})`;
+    if (g.under) {
+      g.under.style.transition = anim ? `transform ${ms}ms cubic-bezier(.22,.9,.32,1)` : 'none';
+      g.under.style.transform = `translate3d(${(-W * 0.18 * (1 - k)).toFixed(1)}px,0,0)`;
+    }
   };
   const terminar = (confirmar) => {
     if (!g || g.terminando) return;
     g.terminando = true;
-    const card = g.card;
-    if (!card) { limpiar(); return; }
-    card.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1)';
-    card.style.transform = confirmar ? `translateX(${innerWidth + 30}px)` : 'translateX(0)';
+    if (!g.card) { limpiar(); return; }
+    const W = innerWidth;
+    const falta = confirmar ? W - g.dx : g.dx;
+    // Más rápido si falta poco, más tranquilo si falta mucho (y un poco más rápido si se soltó con impulso).
+    const ms = Math.round(Math.min(380, Math.max(180, (falta / W) * 420 / Math.max(1, Math.min(2.2, Math.abs(g.vel || 0) * 1.4)))));
+    pintar(confirmar ? W + 20 : 0, true, ms);
     setTimeout(() => {
       if (confirmar) {
         // Ya regresaste: se dibuja la página de verdad (por si algo cambió) y se quitan las capas.
@@ -678,10 +693,10 @@ function setupSwipeBack() {
         if (sc != null) window.scrollTo({ top: sc });
       }
       limpiar();
-    }, 230);
+    }, ms + 20);
   };
   addEventListener('touchstart', (e) => {
-    if (g) { if (g.activo) terminar(g.dx >= innerWidth * 0.3); else g = null; return; }
+    if (g) { if (g.activo) terminar(g.dx >= innerWidth * 0.45); else g = null; return; }
     if (!SUB.has(page) || !sync.config || e.touches.length !== 1 || document.querySelector('.sheet-bg, .viewer, .lockscreen')) return;
     const t = e.touches[0];
     if (t.clientX > EDGE) return;
@@ -699,16 +714,22 @@ function setupSwipeBack() {
     }
     if (e.cancelable) e.preventDefault();
     g.dx = Math.max(0, d);
-    g.card.style.transition = 'none';
-    g.card.style.transform = `translateX(${g.dx}px)`;
+    // Velocidad (px/ms) con las últimas posiciones, para decidir al soltar.
+    const now = performance.now();
+    g.hist = (g.hist || []).filter((p) => now - p.t < 100).concat({ t: now, x: g.dx });
+    const h0 = g.hist[0];
+    g.vel = now - h0.t > 0 ? (g.dx - h0.x) / (now - h0.t) : 0;
+    if (!g.raf) g.raf = requestAnimationFrame(() => { if (g) { g.raf = 0; if (!g.terminando) pintar(g.dx, false); } });
     // Seguro: si por alguna razón no llega el "soltar", se termina solo.
     clearTimeout(g.reloj);
-    g.reloj = setTimeout(() => terminar(g && g.dx >= innerWidth * 0.3), 1500);
+    g.reloj = setTimeout(() => terminar(g && g.dx >= innerWidth * 0.45), 1500);
   }, { passive: false, capture: true });
   const soltar = () => {
     if (!g) return;
     if (!g.activo) { g = null; return; }
-    terminar(g.dx >= innerWidth * 0.3 || (g.dx > 40 && Date.now() - g.t0 < 250));
+    // Con impulso hacia la derecha regresa; con impulso hacia atrás se queda; sin impulso, decide la mitad.
+    const v = g.vel || 0;
+    terminar(v > 0.45 ? true : v < -0.3 ? false : g.dx >= innerWidth * 0.45);
   };
   addEventListener('touchend', soltar, { capture: true });
   addEventListener('touchcancel', soltar, { capture: true });

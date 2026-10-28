@@ -605,7 +605,8 @@ mark.hl { background: color-mix(in srgb, #f2c94c 55%, transparent); color: inher
 /* "Deslizar para regresar" (como pasar página en Books, sin aclararla). */
 .swipe-card, .swipe-under { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; overflow: hidden; pointer-events: none; }
 .swipe-under { z-index: 37; }
-.swipe-card { z-index: 38; border-radius: 22px; box-shadow: -2px 0 0 var(--line), 8px 0 30px rgba(0, 0, 0, .35); will-change: transform; }
+.swipe-card { z-index: 38; border-radius: 22px; will-change: transform, box-shadow; }
+.swipe-under { will-change: transform; }
 .swipe-card .topbar, .swipe-under .topbar { position: relative; top: 0; flex: none; }
 .swipe-body { flex: 1; overflow: hidden; }
 .deseo-img { position: relative; flex-shrink: 0; }
