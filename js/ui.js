@@ -159,3 +159,38 @@ export function openPhoto(sync, clave, title) {
   stage.addEventListener('wheel', (e) => { e.preventDefault(); scale = Math.min(5, Math.max(1, scale * (e.deltaY < 0 ? 1.1 : 0.9))); if (scale === 1) { x = 0; y = 0; } apply(false); }, { passive: false });
   ov.addEventListener('click', (e) => { if (e.target === ov || e.target === stage) { if (scale === 1) close(); } });
 }
+
+// Resalta en un texto lo buscado, sin importar mayúsculas ni tildes ("ub" resalta "Ub" en "Uber").
+const sinTilde = (c) => c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+export function marcar(texto, buscado) {
+  const t = String(texto ?? '');
+  const q = sinTilde(String(buscado || '').trim());
+  if (!q) return t;
+  const chars = [...t];
+  let plano = '';
+  const idx = []; // posición en `plano` → índice en `chars`
+  chars.forEach((c, i) => { const n = sinTilde(c); for (let k = 0; k < n.length; k++) idx.push(i); plano += n; });
+  const out = [];
+  let desde = 0, pos = plano.indexOf(q);
+  while (pos !== -1) {
+    const a = idx[pos], b = idx[pos + q.length - 1] + 1;
+    if (a > desde) out.push(chars.slice(desde, a).join(''));
+    if (b > a) out.push(h('mark', { class: 'hl' }, chars.slice(a, b).join('')));
+    desde = Math.max(desde, b);
+    pos = plano.indexOf(q, pos + q.length);
+  }
+  if (!out.length) return t;
+  if (desde < chars.length) out.push(chars.slice(desde).join(''));
+  return out;
+}
+
+// Campo de búsqueda con botón ✕ para borrar todo de una vez.
+export function campoBuscar({ id, placeholder, value, onInput }) {
+  const x = h('button', { type: 'button', class: 'search-x', 'aria-label': 'Borrar búsqueda', hidden: !value || null });
+  const input = h('input', { class: 'input', id, type: 'text', inputmode: 'search', enterkeyhint: 'search', placeholder, autocomplete: 'off', autocorrect: 'off', spellcheck: 'false',
+    oninput: (e) => { x.hidden = !e.target.value; onInput(e.target.value); } });
+  input.value = value || '';
+  x.textContent = '✕';
+  x.addEventListener('click', () => { input.value = ''; x.hidden = true; onInput(''); input.focus(); });
+  return h('div', { class: 'search-wrap' }, input, x);
+}

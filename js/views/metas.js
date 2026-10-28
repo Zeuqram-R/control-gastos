@@ -2,6 +2,7 @@
 import { h, crc, dayShort, todayCR, addDays, stat, empty } from '../ui.js';
 import * as C from '../calc.js';
 import { abrirHoja } from '../fuente.js';
+import { abrirAlcanza } from '../alcanza.js';
 
 export function viewMetas(ctx) {
   const D = Object.fromEntries(['gastos', 'cuentas', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas', 'abonos', 'metas'].map((k) => [k, ctx.sync.data(k)]));
@@ -10,12 +11,14 @@ export function viewMetas(ctx) {
   const cfg = sync.config;
   const metas = C.metasInfo(D, hoy);
   const P = metas.some((m) => m.falta) ? C.proyeccion(D, hoy, 24) : null;
-  const nueva = () => {
+  const nueva = (pre = {}) => {
     const err = h('p', { class: 'error-msg', hidden: true });
     const nom = h('input', { class: 'input', id: 'm-nombre', placeholder: 'Diciembre, colchón, viaje…', autocomplete: 'off' });
     const mon = h('input', { class: 'input big-num', id: 'm-monto', inputmode: 'numeric', placeholder: '0', autocomplete: 'off' });
     const fec = h('input', { class: 'input', id: 'm-fecha', type: 'date', min: addDays(hoy, 1) });
-    const cerrar = abrirHoja({ titulo: 'Nueva meta de ahorro', cuerpo: [
+    if (pre.nombre) nom.value = pre.nombre;
+    if (pre.monto) mon.value = String(pre.monto);
+    const cerrar = abrirHoja({ titulo: pre.deseo ? `Meta para «${pre.nombre}»` : 'Nueva meta de ahorro', cuerpo: [
       h('div', { class: 'field' }, h('label', { for: 'm-nombre' }, '¿Para qué?'), nom),
       h('div', { class: 'field' }, h('label', { for: 'm-monto' }, 'Cuánto (₡)'), mon),
       h('div', { class: 'field' }, h('label', { for: 'm-fecha' }, '¿Para cuándo?'), fec),
@@ -23,7 +26,9 @@ export function viewMetas(ctx) {
       h('button', { type: 'button', class: 'btn block', onclick: async () => {
         const monto = Number(String(mon.value).replace(/[^\d]/g, ''));
         if (!nom.value.trim() || !monto || !fec.value) { err.textContent = 'Llená los tres datos.'; err.hidden = false; return; }
-        await sync.mutate('metas', { kind: 'upsert', record: { id: `M${Date.now().toString(36)}`, nombre: nom.value.trim(), monto, fecha: fec.value, creada: hoy, por: cfg.persona, aportes: [] } }, `nueva meta: ${nom.value.trim()}`);
+        const mid = `M${Date.now().toString(36)}`;
+        await sync.mutate('metas', { kind: 'upsert', record: { id: mid, nombre: nom.value.trim(), monto, fecha: fec.value, creada: hoy, por: cfg.persona, aportes: [], ...(pre.deseo ? { deseo: pre.deseo } : {}) } }, `nueva meta: ${nom.value.trim()}`);
+        if (pre.deseo) await sync.mutate('deseos', { kind: 'patch', record: { id: pre.deseo, estado: 'meta', meta: mid } }, `deseo → meta: ${nom.value.trim()}`);
         cerrar(); toast('Meta creada.');
       } }, 'Crear meta'),
       h('p', { class: 'note', style: { margin: '10px 0 0' } }, 'Te digo cuánto apartar cada quincena y lo resto en la proyección de las próximas.'),
@@ -77,7 +82,7 @@ export function viewMetas(ctx) {
         h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, 'Apartado'), h('div', { class: 'num' }, crc(totalAp)), h('div', { class: 'sub' }, `de ${crc(totalMeta)} en ${metas.length} meta(s)`)),
         h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, 'Esta quincena'), h('div', { class: 'num' }, crc(totalQ)), h('div', { class: 'sub' }, totalQ ? 'Lo que falta apartar' : 'Todo al día')),
         F.cuentas.length ? h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, 'Fondo de ahorro'), h('div', { class: 'num' }, crc(F.total)), h('div', { class: 'sub' }, 'Se actualiza en Resumen → Cuentas')) : null) : null,
-      h('button', { type: 'button', class: 'btn block', style: { margin: '4px 0 16px' }, onclick: nueva }, 'Nueva meta')),
+      h('button', { type: 'button', class: 'btn block', style: { margin: '4px 0 16px' }, onclick: () => nueva() }, 'Nueva meta')),
     h('section', { id: 'r-metas', class: 'sec' },
     metas.length ? metas.map((m) => {
       // ¿La proyección se pone en negativo antes de la fecha meta (ya restando lo de la meta)?
@@ -94,6 +99,7 @@ export function viewMetas(ctx) {
           m.lista || m.vencida ? null : stat('¿Alcanza?', neg ? 'Justo no' : 'Sí', neg ? `La quincena del ${dayShort(neg.q.inicio)} quedaría en −${crc(-neg.queda)}` : 'La proyección aguanta', neg ? 'var(--warn)' : 'var(--ok)')),
         m.lista ? null : h('button', { type: 'button', class: 'btn block', style: { marginTop: '12px' }, onclick: () => apartar(m) }, 'Apartar'));
     }) : h('div', { class: 'card' }, empty('Sin metas todavía. Creá una (por ejemplo, juntar para diciembre) y te digo cuánto apartar cada quincena.'))),
+    secDeseos(ctx, D, nueva),
     archivadas.length ? h('section', { class: 'card sec' },
       h('details', { class: 'pp' }, h('summary', {}, `Metas archivadas (${archivadas.length})`),
         h('ul', { class: 'rows' }, archivadas.map((m) => h('li', {},
@@ -102,3 +108,58 @@ export function viewMetas(ctx) {
   ];
 }
 
+
+// Lista de deseos: cosas que quieren comprar más adelante. Con un toque se vuelven meta o se revisa si alcanza.
+function secDeseos(ctx, D, nueva) {
+  const { sync, toast } = ctx;
+  const cfg = sync.config;
+  const hoy = todayCR();
+  const deseos = (sync.data('deseos') || []).filter((d) => !d.estado || d.estado === 'pendiente').sort((a, b) => (a.prioridad || 2) - (b.prioridad || 2) || String(a.creado).localeCompare(String(b.creado)));
+  const hechos = (sync.data('deseos') || []).filter((d) => d.estado === 'comprado' || d.estado === 'meta');
+  const PRIOS = [[1, 'Ya'], [2, 'Pronto'], [3, 'Algún día']];
+  const agregar = (d = null) => {
+    const err = h('p', { class: 'error-msg', hidden: true });
+    const nom = h('input', { class: 'input', id: 'd-nombre', placeholder: 'Zapatos, freidora de aire, viaje a la playa…', autocomplete: 'off' });
+    const pre = h('input', { class: 'input big-num', id: 'd-precio', inputmode: 'numeric', placeholder: '0', autocomplete: 'off' });
+    const nota = h('input', { class: 'input', id: 'd-nota', placeholder: 'Dónde lo vieron, link, para quién… (opcional)', autocomplete: 'off' });
+    let prio = d?.prioridad || 2, quien = d?.para || 'Ambos';
+    const segOf = (opts, get, set) => { const w = h('div', { class: 'seg wrap' }); const paint = () => { for (const b of w.children) b.setAttribute('aria-pressed', String(b.dataset.v === String(get()))); }; for (const [v, t] of opts) w.append(h('button', { type: 'button', 'data-v': v, onclick: () => { set(v); paint(); } }, t)); paint(); return w; };
+    if (d) { nom.value = d.nombre; pre.value = d.precio ? String(d.precio) : ''; nota.value = d.nota || ''; }
+    const cerrar = abrirHoja({ titulo: d ? 'Editar deseo' : 'Agregar a la lista de deseos', cuerpo: [
+      h('div', { class: 'field' }, h('label', { for: 'd-nombre' }, '¿Qué?'), nom),
+      h('div', { class: 'field' }, h('label', { for: 'd-precio' }, 'Precio aproximado (₡)'), pre),
+      h('div', { class: 'field' }, h('label', {}, '¿Qué tan pronto?'), segOf(PRIOS, () => prio, (v) => { prio = Number(v); })),
+      h('div', { class: 'field' }, h('label', {}, '¿Para quién?'), segOf([['Ambos', 'Los dos'], ['Jose', 'Jose'], ['Ali', 'Ali']], () => quien, (v) => { quien = v; })),
+      h('div', { class: 'field' }, h('label', { for: 'd-nota' }, 'Nota'), nota),
+      err,
+      h('button', { type: 'button', class: 'btn block', onclick: async () => {
+        if (!nom.value.trim()) { err.textContent = '¿Qué quieren comprar?'; err.hidden = false; return; }
+        const precio = Math.round(Number(String(pre.value).replace(/[^\d]/g, ''))) || null;
+        const rec = { id: d?.id || `W${Date.now().toString(36)}`, nombre: nom.value.trim(), precio, prioridad: prio, para: quien, nota: nota.value.trim(), creado: d?.creado || hoy, por: d?.por || cfg.persona, estado: 'pendiente' };
+        await sync.mutate('deseos', { kind: 'upsert', record: rec }, `${d ? 'edita' : 'agrega'} deseo: ${rec.nombre}`);
+        cerrar(); toast(d ? 'Deseo actualizado.' : 'Agregado a la lista de deseos.');
+      } }, d ? 'Guardar' : 'Agregar'),
+      d ? h('div', { class: 'btn-col', style: { marginTop: '10px' } },
+        h('button', { type: 'button', class: 'btn secondary block', onclick: async () => { await sync.mutate('deseos', { kind: 'patch', record: { id: d.id, estado: 'comprado', comprado: hoy } }, `deseo comprado: ${d.nombre}`); cerrar(); toast(`¡Listo! «${d.nombre}» marcado como comprado.`); } }, 'Ya lo compramos'),
+        h('button', { type: 'button', class: 'btn danger block', onclick: async () => { await sync.mutate('deseos', { kind: 'delete', id: d.id }, `quita deseo: ${d.nombre}`); cerrar(); toast(`Quitado: ${d.nombre}`, { label: 'Deshacer', fn: () => sync.mutate('deseos', { kind: 'upsert', record: d }, `vuelve deseo: ${d.nombre}`) }); } }, 'Quitar de la lista')) : null,
+    ] });
+    if (!d) setTimeout(() => nom.focus(), 250);
+  };
+  const total = C.sum(deseos, (d) => d.precio || 0);
+  return h('section', { id: 'm-deseos', class: 'sec' },
+    h('div', { class: 'sec-head card-head' }, h('h2', {}, 'Lista de deseos'), h('button', { type: 'button', class: 'btn secondary sm', onclick: () => agregar() }, 'Agregar')),
+    deseos.length ? h('div', { class: 'card' },
+      h('p', { class: 'note', style: { marginTop: 0 } }, `${deseos.length} cosa(s)${total ? ` · unos ${crc(total)} en total` : ''}. Tocá una para editarla; "Meta" la convierte en meta de ahorro.`),
+      h('ul', { class: 'rows' }, deseos.map((d) => h('li', {},
+        h('span', { class: `prio p${d.prioridad || 2}`, title: PRIOS.find(([v]) => v === (d.prioridad || 2))[1] }),
+        h('div', { class: 'main tap', role: 'button', onclick: () => agregar(d) }, d.nombre,
+          h('span', { class: 'sub' }, [PRIOS.find(([v]) => v === (d.prioridad || 2))[1], d.para && d.para !== 'Ambos' ? `para ${d.para}` : null, d.nota].filter(Boolean).join(' · '))),
+        h('div', { class: 'deseo-acc' },
+          h('b', {}, d.precio ? crc(d.precio) : '—'),
+          h('div', { class: 'deseo-btns' },
+            d.precio ? h('button', { type: 'button', class: 'btn secondary sm', onclick: () => abrirAlcanza(ctx, { monto: d.precio, nombre: d.nombre }) }, '¿Alcanza?') : null,
+            h('button', { type: 'button', class: 'btn sm', onclick: () => nueva({ nombre: d.nombre, monto: d.precio, deseo: d.id }) }, 'Meta')))))),
+      hechos.length ? h('details', { class: 'pp' }, h('summary', {}, `Cumplidos (${hechos.length})`),
+        h('ul', { class: 'rows' }, hechos.map((d) => h('li', {}, h('div', { class: 'main' }, d.nombre, h('span', { class: 'sub' }, d.estado === 'meta' ? 'Se volvió meta de ahorro' : `Comprado el ${dayShort(d.comprado)}`)), h('span', { class: 'amt' }, d.precio ? crc(d.precio) : ''))))) : null)
+      : h('div', { class: 'card' }, empty('Anoten aquí lo que quieren comprar más adelante. Cuando se decidan por algo, lo convierten en meta con un toque o revisan si les alcanza.')));
+}

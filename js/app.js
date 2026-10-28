@@ -10,17 +10,18 @@ let lockDisponible = false;
 import { viewResumen, viewCategoria } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewMetas } from './views/metas.js';
+import { viewNegocio } from './views/negocio.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.10';
+const APP_VERSION = '5.11';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
 const sync = createSync({ onChange: () => { render(); warmPhotos(); }, onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
-const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', metas: 'Metas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', facturas: 'Facturas', setup: 'Control de gastos' };
+const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', metas: 'Metas', negocio: 'Santo Coco', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', facturas: 'Facturas', setup: 'Control de gastos' };
 
 // Aviso abajo: aparece y se desvanece suave.
 function toast(msg, action, ms) {
@@ -56,7 +57,7 @@ function renderStatus(s) {
 }
 
 // ---------- Navegación ----------
-const SUB = new Set(['historial', 'ajustes', 'producto', 'categoria', 'facturas']);
+const SUB = new Set(['historial', 'ajustes', 'producto', 'categoria', 'facturas', 'negocio']);
 let catActual = null;
 function openCategoria(cat) { catActual = cat; go('categoria'); }
 let productoActual = null;
@@ -91,7 +92,7 @@ function render() {
   $('#page-title').textContent = page === 'categoria' && catActual ? (catActual === 'General' ? 'Quincena' : catActual) : (TITLES[page] || 'Control de gastos');
   $('#btn-back').hidden = !SUB.has(page) || !connected;
   $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
-  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), facturas: needData(viewFacturas), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), metas: needData(viewMetas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), facturas: needData(viewFacturas), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), metas: needData(viewMetas), negocio: needData(viewNegocio), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
@@ -256,38 +257,73 @@ function syncCard() {
 }
 const MESES_UI = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-// Guía para armar el atajo de Siri "Anotar gasto" (manda el gasto directo a GitHub, sin abrir la app).
+// Guía para armar el atajo de Siri "Anotar gasto" (manda el gasto directo a GitHub, sin abrir la app). En español o inglés.
+const SIRI_TXT = {
+  es: {
+    intro: 'Decí "Oye Siri, anotar gasto": te pregunta cuánto, en qué, la categoría y cómo se pagó, y lo anota sin abrir la app (tarda unos segundos en aparecer aquí). También queda como botón en la pantalla de inicio o en un widget de Atajos.',
+    resumen: 'Cómo armarlo (una sola vez, ~5 minutos)',
+    nota: 'Los nombres de abajo son los de iOS en español; si tu iPhone está en inglés, tocá EN.',
+    pasos: (p) => [
+      ['Abrí la app Atajos, tocá + (nuevo atajo) y ponele de nombre "Anotar gasto".', ['Ese nombre es lo que le decís a Siri.']],
+      ['Agregá la acción "Pedir entrada".', ['Tipo de entrada: Número', 'Pregunta: ¿Cuánto fue?']],
+      ['Agregá otra acción "Pedir entrada".', ['Tipo de entrada: Texto', 'Pregunta: ¿En qué?']],
+      ['Agregá la acción "Lista" con las categorías, y después "Elegir de la lista".', ['Elementos: Súper, Casa, Servicios, Transporte, Salidas, Weed, Vapos, Emergencias', 'Indicación: Categoría']],
+      ['Agregá otra "Lista" y otro "Elegir de la lista".', ['Elementos: Salario, Wink, BofA, Préstamo, Efectivo', 'Indicación: ¿Cómo se pagó?']],
+      ['Agregá "Obtener contenido de URL" y pegá esta URL:', ['@url', 'Tocá la flechita (Mostrar más). Método: POST', 'Encabezados → Agregar nuevo encabezado:', '• Authorization = Bearer + espacio + tu token (está en Contraseñas de Apple)', '• Accept =', '@accept', 'Cuerpo de la solicitud: JSON. Agregá estos campos:', '• event_type (Texto) = gasto', '• client_payload (Diccionario), y adentro:', '@campos']],
+      ['Agregá "Mostrar notificación" con el texto "Gasto anotado ✓".', ['Listo. Probalo con ▶︎ en Atajos o diciéndole a Siri "Anotar gasto".']],
+    ],
+    campos: (p) => [['monto', 'Número', '"Entrada proporcionada" del paso 2'], ['comercio', 'Texto', '"Entrada proporcionada" del paso 3'], ['categoria', 'Texto', '"Elemento elegido" del paso 4'], ['fuente', 'Texto', '"Elemento elegido" del paso 5'], ['quien', 'Texto', p]],
+    final: 'Para dólares, agregá en client_payload el campo moneda = USD. El token queda guardado solo en el atajo de tu iPhone; cuando lo renovés, cambialo también ahí.',
+    copiado: 'copiado', copiar: 'Copiar',
+  },
+  en: {
+    intro: 'Say "Hey Siri, anotar gasto": it asks how much, what for, the category and how it was paid, and logs it without opening the app (it shows up here a few seconds later). You can also keep it as a Home Screen button or a Shortcuts widget.',
+    resumen: 'How to set it up (one time, ~5 minutes)',
+    nota: 'The names below are the English iOS ones; if your iPhone is in Spanish, tap ES.',
+    pasos: (p) => [
+      ['Open the Shortcuts app, tap + (new shortcut) and name it "Anotar gasto".', ['That name is what you say to Siri.']],
+      ['Add the "Ask for Input" action.', ['Input Type: Number', 'Prompt: ¿Cuánto fue?']],
+      ['Add another "Ask for Input" action.', ['Input Type: Text', 'Prompt: ¿En qué?']],
+      ['Add a "List" action with the categories, then "Choose from List".', ['Items: Súper, Casa, Servicios, Transporte, Salidas, Weed, Vapos, Emergencias', 'Prompt: Categoría', 'Keep the names in Spanish: the app uses them as categories.']],
+      ['Add another "List" and another "Choose from List".', ['Items: Salario, Wink, BofA, Préstamo, Efectivo', 'Prompt: ¿Cómo se pagó?']],
+      ['Add "Get Contents of URL" and paste this URL:', ['@url', 'Tap the small arrow (Show More). Method: POST', 'Headers → Add new header:', '• Authorization = Bearer + space + your token (it’s in Apple Passwords)', '• Accept =', '@accept', 'Request Body: JSON. Add these fields:', '• event_type (Text) = gasto', '• client_payload (Dictionary), and inside it:', '@campos']],
+      ['Add "Show Notification" with the text "Gasto anotado ✓".', ['Done. Test it with ▶︎ in Shortcuts or by saying "Anotar gasto" to Siri.']],
+    ],
+    campos: (p) => [['monto', 'Number', '"Provided Input" from step 2'], ['comercio', 'Text', '"Provided Input" from step 3'], ['categoria', 'Text', '"Chosen Item" from step 4'], ['fuente', 'Text', '"Chosen Item" from step 5'], ['quien', 'Text', p]],
+    final: 'For dollars, add a field moneda = USD inside client_payload. The token is stored only in the shortcut on your iPhone; when you renew it, update it there too.',
+    copiado: 'copied', copiar: 'Copy',
+  },
+};
 function seccionSiri() {
   const persona = sync.config?.persona || 'Jose';
   const URL_API = 'https://api.github.com/repos/Zeuqram-R/control-gastos-datos/dispatches';
-  const copiar = (txt, que) => h('button', { type: 'button', class: 'btn secondary sm', onclick: async () => {
-    try { await navigator.clipboard.writeText(txt); toast(`${que} copiado.`); } catch (e) { toast('No se pudo copiar; mantené presionado el texto.'); }
-  } }, 'Copiar');
-  const val = (txt, que) => h('div', { class: 'siri-val' }, h('code', {}, txt), copiar(txt, que));
-  const paso = (n, titulo, ...cuerpo) => h('li', {}, h('b', {}, titulo), ...cuerpo);
-  return h('section', { class: 'card' },
-    h('h2', {}, 'Atajo de Siri'),
-    h('p', { class: 'note' }, 'Decí "Oye Siri, anotar gasto": te pregunta cuánto, en qué, la categoría y cómo se pagó, y lo anota sin abrir la app (tarda unos segundos en aparecer aquí). También queda como botón en la pantalla de inicio o en un widget de Atajos.'),
-    h('details', { class: 'pp' }, h('summary', {}, 'Cómo armarlo (una sola vez, ~5 minutos)'),
-      h('ol', { class: 'siri-pasos' },
-        paso(1, 'Abrí la app Atajos → + (nuevo atajo) y ponele de nombre "Anotar gasto".', h('span', { class: 'sub' }, 'Ese nombre es lo que le decís a Siri.')),
-        paso(2, 'Agregá "Pedir entrada":', h('span', { class: 'sub' }, 'Tipo: Número · Pregunta: ¿Cuánto fue?')),
-        paso(3, 'Agregá otro "Pedir entrada":', h('span', { class: 'sub' }, 'Tipo: Texto · Pregunta: ¿En qué?')),
-        paso(4, 'Agregá "Lista" con las categorías y después "Elegir de la lista" (indicación: Categoría):', h('span', { class: 'sub' }, 'Súper, Casa, Servicios, Transporte, Salidas, Weed, Vapos, Emergencias.')),
-        paso(5, 'Agregá otra "Lista" y otro "Elegir de la lista" (indicación: ¿Cómo se pagó?):', h('span', { class: 'sub' }, 'Salario, Wink, BofA, Préstamo, Efectivo.')),
-        paso(6, 'Agregá "Obtener contenido de URL" y poné esta URL:', val(URL_API, 'URL'),
-          h('span', { class: 'sub' }, 'Tocá "Mostrar más": Método POST.'),
-          h('span', { class: 'sub' }, 'Encabezados: Authorization = Bearer + espacio + tu token (está en Contraseñas de Apple), y Accept = application/vnd.github+json'),
-          val('application/vnd.github+json', 'Accept'),
-          h('span', { class: 'sub' }, 'Cuerpo de la solicitud: JSON. Agregá el campo event_type (Texto) = gasto, y el campo client_payload (Diccionario) con adentro:'),
-          h('ul', { class: 'siri-campos' },
-            h('li', {}, h('code', {}, 'monto'), ' (Número) → la "Entrada proporcionada" del paso 2'),
-            h('li', {}, h('code', {}, 'comercio'), ' (Texto) → la "Entrada proporcionada" del paso 3'),
-            h('li', {}, h('code', {}, 'categoria'), ' (Texto) → "Elemento elegido" del paso 4'),
-            h('li', {}, h('code', {}, 'fuente'), ' (Texto) → "Elemento elegido" del paso 5'),
-            h('li', {}, h('code', {}, 'quien'), ` (Texto) → ${persona}`))),
-        paso(7, 'Agregá "Mostrar notificación" con el texto "Gasto anotado ✓".', h('span', { class: 'sub' }, 'Listo. Probalo con el botón ▶︎ de Atajos o diciéndole a Siri "Anotar gasto".'))),
-      h('p', { class: 'note', style: { margin: '10px 0 0' } }, 'Para dólares, agregá en client_payload el campo moneda = USD. El token queda guardado solo en el atajo de tu iPhone; cuando lo renovés, cambialo también ahí.')));
+  const ACCEPT = 'application/vnd.github+json';
+  let lang = prefs.get('siriLang', 'es');
+  const cont = h('div', {});
+  const abierto = { v: false };
+  const pintar = () => {
+    const T = SIRI_TXT[lang];
+    const copiar = (txt) => h('button', { type: 'button', class: 'btn secondary sm', onclick: async () => {
+      try { await navigator.clipboard.writeText(txt); toast(`${txt.length > 40 ? 'URL' : txt} ${T.copiado}.`); } catch (e) { toast('No se pudo copiar; mantené presionado el texto.'); }
+    } }, T.copiar);
+    const val = (txt) => h('div', { class: 'siri-val' }, h('code', {}, txt), copiar(txt));
+    const linea = (l) => (l === '@url' ? val(URL_API) : l === '@accept' ? val(ACCEPT)
+      : l === '@campos' ? h('ul', { class: 'siri-campos' }, T.campos(persona).map(([k, tipo, v]) => h('li', {}, h('code', {}, k), ` (${tipo}) → ${v}`)))
+      : h('span', { class: 'sub' }, l));
+    const seg = h('div', { class: 'seg mini', role: 'group', 'aria-label': 'Idioma' },
+      [['es', 'ES'], ['en', 'EN']].map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(lang === k), onclick: () => { lang = k; prefs.set('siriLang', k); pintar(); } }, t)));
+    const det = h('details', { class: 'pp', open: abierto.v || null, ontoggle: (e) => { abierto.v = e.target.open; } },
+      h('summary', {}, T.resumen),
+      h('p', { class: 'note', style: { margin: '10px 0 0' } }, T.nota),
+      h('ol', { class: 'siri-pasos' }, T.pasos(persona).map(([t, ls]) => h('li', {}, h('b', {}, t), ls.map(linea)))),
+      h('p', { class: 'note', style: { margin: '12px 0 0' } }, T.final));
+    cont.replaceChildren(
+      h('div', { class: 'card-head' }, h('h2', {}, 'Atajo de Siri'), seg),
+      h('p', { class: 'note' }, T.intro),
+      det);
+  };
+  pintar();
+  return h('section', { class: 'card siri' }, cont);
 }
 
 function viewAjustes() {

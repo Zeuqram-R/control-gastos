@@ -2,7 +2,7 @@
 import { h, crc, todayCR, dayShort, empty, ago } from '../ui.js';
 import { textToB64 } from '../github.js';
 
-const fstate = { files: [], lugar: '', fuente: 'Salario', quien: null, nota: '', subiendo: false, respuestas: {} };
+const fstate = { files: [], lugar: '', fuente: 'Salario', quien: null, nota: '', subiendo: false, respuestas: {}, negocio: false };
 const FUENTES = ['Salario', 'Wink', 'BofA', 'Préstamo', 'Efectivo'];
 
 // Achica las fotos (máx. 2000 px, JPEG) para que suban rápido y pesen poco.
@@ -63,11 +63,11 @@ export function viewFacturas(ctx) {
         nombres.push(name);
         files.push({ path: `bandeja/${id}/${name}`, b64: await blobToB64(blob) });
       }
-      const ficha = { id, subida: new Date().toISOString(), subido_por: cfg.persona, dispositivo: cfg.dispositivo, lugar: fstate.lugar.trim(), fuente: fstate.fuente, quien_pago: fstate.quien, nota: fstate.nota.trim(), archivos: nombres };
+      const ficha = { id, subida: new Date().toISOString(), subido_por: cfg.persona, dispositivo: cfg.dispositivo, lugar: fstate.lugar.trim(), fuente: fstate.fuente, quien_pago: fstate.quien, nota: fstate.nota.trim(), archivos: nombres, ...(fstate.negocio ? { negocio: 'Santo Coco' } : {}) };
       files.push({ path: `bandeja/${id}/factura.json`, b64: textToB64(JSON.stringify(ficha, null, 1) + '\n') });
       const resumen = `${ficha.lugar || 'Factura'} · ${nombres.length} foto(s) · ${ficha.fuente}`;
       await sync.subir(files, `${cfg.persona} (${cfg.dispositivo}): factura ${resumen}`, { resumen, id });
-      Object.assign(fstate, { files: [], lugar: '', nota: '', subiendo: false });
+      Object.assign(fstate, { files: [], lugar: '', nota: '', subiendo: false, negocio: false, fuente: 'Salario' });
       toast('Factura en camino. Te aviso aquí cuando esté lista.');
     } catch (e) {
       fstate.subiendo = false;
@@ -92,7 +92,8 @@ export function viewFacturas(ctx) {
       h('div', { class: 'fac-prevs' }, previews,
         h('button', { type: 'button', class: 'fac-add', onclick: () => fileIn.click() }, h('span', { class: 'plus' }, '+'), fstate.files.length ? 'Otra foto' : 'Elegir foto')),
       h('div', { class: 'field' }, h('label', { for: 'fac-lugar' }, 'Dónde'), lugarIn, h('datalist', { id: 'fac-lugares' }, lugares.map((l) => h('option', { value: l.nombre })))),
-      h('div', { class: 'field' }, h('label', {}, 'Cómo se pagó'), seg('fuente', FUENTES)),
+      h('div', { class: 'field' }, h('button', { type: 'button', class: 'neg-switch', 'aria-pressed': String(fstate.negocio), onclick: () => { fstate.negocio = !fstate.negocio; fstate.fuente = fstate.negocio ? 'Caja Santo Coco' : 'Salario'; rerender(); } }, h('span', { class: 'neg-dot' }), 'Es de Santo Coco 🥥')),
+      h('div', { class: 'field' }, h('label', {}, 'Cómo se pagó'), seg('fuente', fstate.negocio ? ['Caja Santo Coco', ...FUENTES] : FUENTES)),
       h('div', { class: 'field' }, h('label', {}, 'Quién pagó'), seg('quien', ['Jose', 'Ali'])),
       h('div', { class: 'field' }, h('label', { for: 'fac-nota' }, 'Nota'), notaIn),
       h('button', { type: 'button', class: 'btn block', disabled: fstate.subiendo || !fstate.files.length || null, onclick: subir }, fstate.subiendo ? 'Preparando…' : 'Subir factura')),

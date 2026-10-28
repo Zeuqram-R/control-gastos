@@ -14,8 +14,9 @@ export function abrirGasto(ctx, pre = {}) {
   // Lo último que se anotó en cada comercio sirve para adivinar la categoría.
   const porComercio = new Map();
   for (const g of gastos.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))) if (g.comercio) porComercio.set(g.comercio.toLowerCase(), g);
-  const cats = [...new Set([...C.CATS, 'Transporte', ...gastos.map((g) => g.categoria).filter(Boolean)])];
-  const st = { monto: '', moneda: 'CRC', comercio: '', desc: '', categoria: pre.categoria || null, tipo: 'Variable', fuente: 'Salario', quien: cfg.persona, fecha: hoy, guardando: false, catAuto: false };
+  const catsCasa = [...new Set([...C.CATS, 'Transporte', ...gastos.filter((g) => !g.negocio).map((g) => g.categoria).filter(Boolean)])];
+  const catsNeg = [...new Set([...C.CATS_NEGOCIO, ...gastos.filter((g) => g.negocio).map((g) => g.categoria).filter(Boolean)])];
+  const st = { monto: '', moneda: 'CRC', comercio: '', desc: '', categoria: pre.categoria || null, tipo: 'Variable', fuente: pre.negocio ? C.CAJA_NEGOCIO : 'Salario', quien: cfg.persona, fecha: hoy, guardando: false, catAuto: false, negocio: !!pre.negocio };
 
   const err = h('p', { class: 'error-msg', hidden: true });
   const seg = (key, opts, cls = '') => {
@@ -31,11 +32,22 @@ export function abrirGasto(ctx, pre = {}) {
   };
   const montoIn = h('input', { class: 'input big-num', id: 'g-monto', inputmode: 'decimal', placeholder: '0', autocomplete: 'off', oninput: (e) => { st.monto = e.target.value; } });
   const monedaSeg = seg('moneda', [['CRC', '₡'], ['USD', '$']], 'mini');
-  const catSeg = seg('categoria', cats);
+  let catSeg = seg('categoria', st.negocio ? catsNeg : catsCasa);
+  let fuenteSeg = seg('fuente', st.negocio ? [C.CAJA_NEGOCIO, ...FUENTES] : FUENTES);
+  const catBox = h('div', {}, catSeg), fuenteBox = h('div', {}, fuenteSeg);
+  const negBtn = h('button', { type: 'button', class: 'neg-switch', 'aria-pressed': String(st.negocio), onclick: () => {
+    st.negocio = !st.negocio; negBtn.setAttribute('aria-pressed', String(st.negocio));
+    st.categoria = null; st.catAuto = false;
+    st.fuente = st.negocio ? C.CAJA_NEGOCIO : 'Salario';
+    catSeg = seg('categoria', st.negocio ? catsNeg : catsCasa); catBox.replaceChildren(catSeg);
+    fuenteSeg = seg('fuente', st.negocio ? [C.CAJA_NEGOCIO, ...FUENTES] : FUENTES); fuenteBox.replaceChildren(fuenteSeg);
+    negNota.hidden = !st.negocio;
+  } }, h('span', { class: 'neg-dot' }), 'Es de Santo Coco 🥥');
+  const negNota = h('p', { class: 'note', style: { margin: '6px 0 0' }, hidden: !st.negocio || null }, 'Si sale de la caja del negocio no toca la plata de la casa. Si lo pagaron con plata de la casa, se cuenta en la quincena como "Santo Coco".');
   const comIn = h('input', { class: 'input', id: 'g-comercio', list: 'g-comercios', placeholder: 'Uber, la feria, SINPE a Cris…', autocomplete: 'off', oninput: (e) => {
     st.comercio = e.target.value;
     const prev = porComercio.get(st.comercio.trim().toLowerCase());
-    if (prev && (!st.categoria || st.catAuto)) {
+    if (prev && !!prev.negocio === st.negocio && (!st.categoria || st.catAuto)) {
       st.categoria = prev.categoria; st.catAuto = true; catSeg.paint();
       if (prev.tipo === 'Variable' || prev.tipo === 'Una vez') { st.tipo = prev.tipo; tipoSeg.paint(); }
     }
@@ -67,6 +79,7 @@ export function abrirGasto(ctx, pre = {}) {
       descripcion: st.desc.trim(), monto: montoCRC, tipo: st.tipo, fuente: st.fuente, metodo_pago: st.fuente === 'Efectivo' ? 'Efectivo' : '',
       nota: [`Anotado en la app por ${cfg.persona}`, st.quien !== cfg.persona ? `pagó ${st.quien}` : null, st.moneda === 'USD' ? `${usd(n)} al tipo de cambio de ${crc(Number(tc.venta))}` : null].filter(Boolean).join(' · '),
       quien_pago: st.quien,
+      ...(st.negocio ? { negocio: C.NEGOCIO } : {}),
     };
     st.guardando = true; btn.disabled = true;
     await sync.mutate('gastos', { kind: 'upsert', record: rec }, `gasto: ${rec.comercio} ${crc(montoCRC)}`);
@@ -90,9 +103,10 @@ export function abrirGasto(ctx, pre = {}) {
     h('div', { class: 'field' }, h('label', { for: 'g-monto' }, 'Monto'), h('div', { class: 'row-add' }, montoIn, monedaSeg)),
     h('div', { class: 'field' }, h('label', { for: 'g-comercio' }, '¿En qué?'), comIn,
       h('datalist', { id: 'g-comercios' }, [...new Set(gastos.map((g) => g.comercio).filter(Boolean))].map((c) => h('option', { value: c })))),
-    h('div', { class: 'field' }, h('label', {}, 'Categoría'), catSeg),
+    h('div', { class: 'field' }, negBtn, negNota),
+    h('div', { class: 'field' }, h('label', {}, 'Categoría'), catBox),
     h('div', { class: 'field' }, h('label', {}, 'Tipo'), tipoSeg),
-    h('div', { class: 'field' }, h('label', {}, 'Cómo se pagó'), seg('fuente', FUENTES)),
+    h('div', { class: 'field' }, h('label', {}, 'Cómo se pagó'), fuenteBox),
     h('div', { class: 'field' }, h('label', {}, 'Quién pagó'), seg('quien', ['Jose', 'Ali'])),
     h('div', { class: 'field' }, h('label', { for: 'g-fecha' }, 'Cuándo'), h('div', { class: 'row-add' }, diaSeg, fechaIn)),
     h('div', { class: 'field' }, h('label', { for: 'g-desc' }, 'Detalle'), descIn),

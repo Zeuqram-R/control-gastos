@@ -3,7 +3,7 @@
 
 export const ARCHIVOS = [
   ['gastos', 'Gastos'], ['pagos_recurrentes', 'Recurrentes pagados'], ['recurrentes', 'Recurrentes'], ['deudas', 'Deudas'],
-  ['pagos_deudas', 'Deudas pagadas'], ['abonos', 'Abonos'], ['cuentas', 'Cuentas'], ['metas', 'Metas'], ['saldos', 'Saldos'],
+  ['pagos_deudas', 'Deudas pagadas'], ['abonos', 'Abonos'], ['cuentas', 'Cuentas'], ['metas', 'Metas'], ['deseos', 'Lista de deseos'], ['negocio', 'Santo Coco ventas'], ['saldos', 'Saldos'],
   ['ingresos', 'Ingresos'], ['presupuestos', 'Presupuestos'], ['compras', 'Compras'], ['productos', 'Productos'],
   ['eventos', 'Eventos'], ['lista', 'Lista'], ['lugares', 'Lugares'], ['facturas', 'Facturas'], ['tipo_cambio', 'Tipo de cambio'],
 ];

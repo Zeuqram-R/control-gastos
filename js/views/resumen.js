@@ -1,9 +1,11 @@
 // Página Resumen: quincena actual, gasto por tipo, el mes, perecederos, gastos, súper, IVA y compras.
-import { h, privacy, addDays, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty } from '../ui.js';
+import { h, privacy, addDays, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty, marcar, campoBuscar } from '../ui.js';
 import * as C from '../calc.js';
 import { preguntasAbiertas } from './facturas.js';
 import { conFuente } from '../fuente.js';
 import { abrirGasto } from '../gasto.js';
+import { abrirAlcanza } from '../alcanza.js';
+import { abrirPresupuestos } from '../sugerencias.js';
 
 const state = { movBuscar: '', buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0, qOff: 0 };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
@@ -26,7 +28,8 @@ export function viewResumen(ctx) {
     state.qOff > 0 ? secProyeccion(ctx, D, hoy) : secQuincena(ctx, D, B, hoy),
     secCuentas(ctx, D, B, hoy),
     secMetas(ctx, D, hoy),
-    secTipos(D, B, hoy),
+    secNegocio(ctx, hoy),
+    secTipos(ctx, D, B, hoy),
     secMes(D),
     secVencimientos(ctx, cat, D.eventos, hoy),
     secGastos(ctx, C.movimientos(D)),
@@ -140,7 +143,9 @@ function secQuincena(ctx, D, B, hoy) {
         conFuente(privacy.hide ? stat('Queda libre', crc(0), 'Tocá el ojo de arriba para verlo') : stat('Queda libre', `${B.queda < 0 ? '−' : ''}${crc(Math.abs(B.queda))}`, B.queda < 0 ? `Falta para cubrir lo que hay que pagar hasta el ${dayShort(q.fin)}` : `Libre para el resto de la quincena${B.apartado ? ` (ya sin los ${crc(B.apartado)} apartados)` : ''}`, B.queda < 0 ? 'var(--bad)' : 'var(--ok)'), () => ({
           titulo: 'Queda libre', nota: 'Lo que sobró de la anterior y lo que entra, menos lo que falta pagar, menos lo ya gastado del salario.' + fondoNota(D, B.queda),
           grupos: [gIng, gPagar, gGastado, B.apartado ? { titulo: 'Apartado para metas', signo: '−', total: B.apartado, lineas: B.aportes.map((a) => ({ nombre: a.meta, sub: `${dayShort(a.fecha)} · ${a.por || ''}`, monto: Number(a.monto) })) } : null], total: B.queda }))),
-      h('p', { class: 'fx-hint' }, 'Tocá un número para ver de dónde sale.'),
+      h('div', { class: 'q-foot' },
+        h('p', { class: 'fx-hint' }, 'Tocá un número para ver de dónde sale.'),
+        h('button', { type: 'button', class: 'btn secondary sm', onclick: () => abrirAlcanza(ctx) }, '¿Me alcanza?')),
       fondoLinea(D, B.queda),
       items.length ? h('details', { class: 'pp' },
         h('summary', {}, 'Ver lo que hay que pagar'),
@@ -191,7 +196,7 @@ function genCard(D, B, catName, hoy, compact) {
         : empty(`Todavía no hay quincenas cerradas. Esta cierra el ${dayShort(q.fin)}.`)));
 }
 
-function secTipos(D, B, hoy) {
+function secTipos(ctx, D, B, hoy) {
   const { q } = B;
   const movs = C.movimientos(D);
   const extras = [...new Set(movs.map((g) => g.categoria))].filter((c) => c && !C.CATS.includes(c));
@@ -199,7 +204,7 @@ function secTipos(D, B, hoy) {
   const conAlgo = todas.filter((c) => movs.some((g) => g.categoria === c && g.fecha >= q.inicio && g.fecha <= q.fin) || C.presupuestoVigente(D.presupuestos, c, q.inicio));
   const resto = todas.filter((c) => !conAlgo.includes(c));
   return h('section', { id: 'r-tipos', class: 'sec' },
-    h('div', { class: 'sec-head' }, h('h2', {}, 'Por tipo de gasto')),
+    h('div', { class: 'sec-head card-head' }, h('h2', {}, 'Por tipo de gasto'), h('button', { type: 'button', class: 'btn secondary sm', onclick: () => abrirPresupuestos(ctx, D) }, 'Presupuestos')),
     conAlgo.length ? h('div', { class: 'qcats' }, conAlgo.map((c) => genCard(D, B, c, hoy, true))) : null,
     resto.length ? h('p', { class: 'note' }, `Sin gastos esta quincena: ${resto.join(', ')}.`) : null);
 }
@@ -305,32 +310,33 @@ function secGastos(ctx, movs) {
     : `${dayShort(actual)} – ${dayShort(addDays(actual, 6))}`;
   const nav = (lbl, aria, delta, disabled) => h('button', { type: 'button', class: 'icon-btn', 'aria-label': aria, disabled: disabled || null, onclick: () => { state.movOff += delta; ctx.rerender(); } }, lbl);
   const modo = (k, t) => h('button', { type: 'button', 'aria-pressed': String(state.movModo === k), onclick: () => { if (state.movModo !== k) { state.movModo = k; state.movOff = 0; ctx.rerender(); } } }, t);
-  const filaMov = (g) => h('li', {},
-    h('div', { class: 'main' }, g.titulo,
-      h('span', { class: 'sub' }, [dayShort(g.fecha), g.sub, g.categoria, g.fuente].filter(Boolean).join(' · ')),
-      g.tipo === 'gasto' ? (g.gtipo ? h('span', { class: `pill ${g.gtipo === 'Pendiente' ? 'pend' : g.gtipo === 'Fijo' ? 'rec' : ''}` }, g.gtipo) : null) : h('span', { class: `pill ${g.tipo === 'rec' ? 'rec' : 'pend'}` }, TIPO[g.tipo])),
+  const filaMov = (g, q = '') => h('li', {},
+    h('div', { class: 'main' }, marcar(g.titulo, q),
+      h('span', { class: 'sub' }, marcar([dayShort(g.fecha), g.sub, g.categoria, g.fuente].filter(Boolean).join(' · '), q)),
+      g.tipo === 'gasto' ? (g.gtipo ? h('span', { class: `pill ${g.gtipo === 'Pendiente' ? 'pend' : g.gtipo === 'Fijo' ? 'rec' : ''}` }, marcar(g.gtipo, q)) : null) : h('span', { class: `pill ${g.tipo === 'rec' ? 'rec' : 'pend'}` }, marcar(TIPO[g.tipo], q))),
     h('span', { class: 'amt' }, crc(g.monto)));
   const cuerpo = h('div', {});
   const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const fill = () => {
     const q = norm(state.movBuscar.trim());
     if (q) {
-      const res = movs.filter((g) => norm([g.titulo, g.sub, g.categoria, g.fuente, g.gtipo, dayShort(g.fecha), MESES[Number(g.fecha.slice(5, 7)) - 1]].join(' ')).includes(q));
+      // El mes solo cuenta si se escribe su nombre (o el inicio, desde 3 letras): así "ub" no trae todo octubre.
+      const res = movs.filter((g) => norm([g.titulo, g.sub, g.categoria, g.fuente, g.gtipo, dayShort(g.fecha)].join(' ')).includes(q)
+        || (q.length >= 3 && norm(MESES[Number(g.fecha.slice(5, 7)) - 1]).startsWith(q)));
       cuerpo.replaceChildren(
         h('div', { class: 'per-nav' }, h('div', { class: 'per-t' }, h('b', {}, `${res.length} resultado(s)`), h('span', { class: 'sub' }, `${crc(C.sum(res, (g) => g.monto))} en total · todos los meses`))),
-        res.length ? h('ul', { class: 'rows' }, res.map(filaMov)) : empty('Nada coincide con la búsqueda.'));
+        res.length ? h('ul', { class: 'rows' }, res.map((g) => filaMov(g, state.movBuscar))) : empty('Nada coincide con la búsqueda.'));
     } else {
       cuerpo.replaceChildren(
         h('div', { class: 'per-nav' },
           nav('‹', state.movModo === 'mes' ? 'Mes anterior' : 'Semana anterior', 1, state.movOff >= periodos.length - 1),
           h('div', { class: 'per-t' }, h('b', {}, titulo), h('span', { class: 'sub' }, `${lista.length} movimiento(s) · ${crc(C.sum(lista, (g) => g.monto))}`)),
           nav('›', state.movModo === 'mes' ? 'Mes siguiente' : 'Semana siguiente', -1, state.movOff <= 0)),
-        lista.length ? h('ul', { class: 'rows' }, lista.map(filaMov)) : empty(state.movModo === 'mes' ? 'No hay movimientos este mes.' : 'No hay movimientos esta semana.'));
+        lista.length ? h('ul', { class: 'rows' }, lista.map((g) => filaMov(g))) : empty(state.movModo === 'mes' ? 'No hay movimientos este mes.' : 'No hay movimientos esta semana.'));
     }
   };
   fill();
-  const buscar = h('input', { class: 'input', id: 'buscar-mov', type: 'search', placeholder: 'Buscar: Uber, súper, Wink, octubre…', autocomplete: 'off', oninput: (e) => { state.movBuscar = e.target.value; fill(); } });
-  buscar.value = state.movBuscar;
+  const buscar = campoBuscar({ id: 'buscar-mov', placeholder: 'Buscar: Uber, súper, Wink, octubre…', value: state.movBuscar, onInput: (v) => { state.movBuscar = v; fill(); } });
   return h('section', { id: 'r-gastos', class: 'card sec' },
     h('div', { class: 'card-head' }, h('h2', {}, 'Movimientos'), h('div', { class: 'head-r' }, h('button', { type: 'button', class: 'btn blue sm', onclick: () => abrirGasto(ctx) }, 'Gasto'), h('div', { class: 'seg mini' }, modo('mes', 'Mes'), modo('semana', 'Semana')))),
     h('div', { class: 'field', style: { margin: '10px 0 4px' } }, buscar),
@@ -415,6 +421,16 @@ function secMetas(ctx, D, hoy) {
         m.lista || m.vencida ? null : h('div', { class: 'meta-q' }, h('span', { class: 'sub' }, 'Esta quincena'), h('b', {}, m.estaQ ? crc(m.estaQ) : '✓')))))
         : h('p', { class: 'note', style: { margin: 0 } }, 'Sin metas todavía. Tocá para crear una en Metas.'),
       h('div', { class: 'tap-more' }, 'Ver en Metas ›')));
+}
+
+// ---------- Santo Coco (resumen; se maneja en su página) ----------
+function secNegocio(ctx, hoy) {
+  const N = C.negocioInfo({ gastos: ctx.sync.data('gastos'), negocio: ctx.sync.data('negocio') }, hoy.slice(0, 7));
+  return h('section', { id: 'r-negocio', class: 'card fac-quick tap-card sec', role: 'button', 'aria-label': 'Abrir Santo Coco', onclick: () => ctx.go('negocio') },
+    h('div', { class: 'main' },
+      h('b', {}, 'Santo Coco 🥥'),
+      h('span', { class: 'sub' }, N.ventas.length || N.gastos.length ? `Este mes: ventas ${crc(N.ventasMes)} · gastos ${crc(N.gastosMes)} · ${N.ganancia < 0 ? 'pérdida' : 'ganancia'} ${crc(Math.abs(N.ganancia))}` : 'Ventas y gastos del negocio, aparte de la casa.')),
+    h('span', { class: 'chev big' }, '›'));
 }
 
 // ---------- Cuentas (Bank of America y las que vengan) ----------

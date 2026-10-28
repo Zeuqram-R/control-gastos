@@ -7,6 +7,9 @@ const groupBy = (arr, f) => { const m = new Map(); for (const x of arr) { const 
 const d10 = (s) => String(s || '').slice(0, 10);
 const iso = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
 
+export const NEGOCIO = 'Santo Coco';
+export const CAJA_NEGOCIO = 'Caja Santo Coco';
+export const CATS_NEGOCIO = ['Insumos', 'Empaque', 'Transporte', 'Publicidad', 'Equipo', 'Otros'];
 export const CATS = ['Súper', 'Casa', 'Servicios', 'Suscripciones y pagos recurrentes', 'Weed', 'Vapos', 'Salidas', 'Emergencias'];
 export const CAT_SUB = { 'Súper': 'Supermercados, chino, pulperías y feria' };
 
@@ -174,6 +177,12 @@ export function movimientos(D) {
   const out = [];
   for (const g of D.gastos) {
     if (deCuenta.has(g.fuente)) continue;
+    // Santo Coco: lo pagado con la caja del negocio no toca la casa; lo pagado con plata de la casa sale como categoría "Santo Coco".
+    if (g.negocio) {
+      if (g.fuente === CAJA_NEGOCIO) continue;
+      out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.negocio, monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [g.categoria, g.descripcion].filter(Boolean).join(' · '), tipo: 'gasto', gtipo: g.tipo, negocio: g.negocio });
+      continue;
+    }
     out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.categoria || 'Sin categoría', monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [...new Set([g.descripcion, g.subcategoria].filter(Boolean))].join(' · '), tipo: 'gasto', gtipo: g.tipo });
   }
   for (const p of D.pagos_recurrentes) {
@@ -535,4 +544,22 @@ export function proyeccion(D, hoy, n = 12) {
   }
   const sinFecha = deudas.filter((d) => !d.fecha_limite && !d.recurrente);
   return { actual: B, futuras: out, sinFecha: { n: sinFecha.length, total: sum(sinFecha, (d) => d.crc) } };
+}
+
+// Santo Coco: ventas, gastos y ganancia por mes; cuánto ha puesto la casa y cuánto hay en la caja del negocio.
+export function negocioInfo(D, mes) {
+  const gastos = (D.gastos || []).filter((g) => g.negocio === NEGOCIO).map((g) => ({ ...g, fecha: d10(g.fecha), monto: Number(g.monto) || 0 }));
+  const ventas = (D.negocio || []).filter((v) => (v.tipo || 'venta') === 'venta').map((v) => ({ ...v, fecha: d10(v.fecha), monto: Number(v.monto) || 0 }));
+  const delMes = (l) => l.filter((x) => x.fecha.startsWith(mes));
+  const gm = delMes(gastos), vm = delMes(ventas);
+  const meses = [...new Set([...gastos, ...ventas].map((x) => x.fecha.slice(0, 7)))].sort();
+  return {
+    mes, meses, ventas, gastos,
+    ventasMes: sum(vm, (v) => v.monto), gastosMes: sum(gm, (g) => g.monto), nVentas: vm.length,
+    ganancia: sum(vm, (v) => v.monto) - sum(gm, (g) => g.monto),
+    puestoCasa: sum(gastos.filter((g) => g.fuente !== CAJA_NEGOCIO), (g) => g.monto),
+    caja: sum(ventas, (v) => v.monto) - sum(gastos.filter((g) => g.fuente === CAJA_NEGOCIO), (g) => g.monto),
+    porCat: [...groupBy(gm, (g) => g.categoria || 'Otros')].map(([c, l]) => ({ label: c, total: sum(l, (g) => g.monto) })).sort((a, b) => b.total - a.total),
+    movs: [...vm.map((v) => ({ ...v, clase: 'venta' })), ...gm.map((g) => ({ ...g, clase: 'gasto' }))].sort((a, b) => b.fecha.localeCompare(a.fecha) || String(b.id).localeCompare(String(a.id))),
+  };
 }
