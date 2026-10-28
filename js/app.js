@@ -6,8 +6,9 @@ import { prefs } from './prefs.js';
 import { viewResumen } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewProductos, viewProducto } from './views/productos.js';
+import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 
-const APP_VERSION = '3.3';
+const APP_VERSION = '4.0';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -78,7 +79,7 @@ function render() {
   $('#page-title').textContent = TITLES[page] || 'Control de gastos';
   $('#btn-back').hidden = !SUB.has(page) || !connected;
   $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
-  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
