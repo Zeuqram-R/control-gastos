@@ -42,6 +42,8 @@ function qNav(ctx, titulo) {
     btn('›', 'Quincena siguiente', 1, state.qOff >= 12));
 }
 
+const aguiTxt = (a) => `aguinaldo de ${a.persona} ${crc(a.neto)}${a.proporcional ? ` (proporcional desde el ${dayShort(a.desde)})` : ''}, a más tardar el 20 dic.`;
+
 function secProyeccion(ctx, D, hoy) {
   const P = C.proyeccion(D, hoy, 12);
   const r = P.futuras[state.qOff - 1];
@@ -52,7 +54,7 @@ function secProyeccion(ctx, D, hoy) {
     h('div', { class: 'card proy' },
       h('div', { class: 'qgrid' },
         stat('Sobra de la anterior', `${r.arrastre < 0 && !privacy.hide ? '−' : ''}${crc(Math.abs(r.arrastre))}`, r.arrastre < 0 ? 'La anterior queda en negativo' : 'Lo que quedaría libre de la quincena anterior', r.arrastre < 0 ? 'var(--bad)' : null),
-        stat('Salario', crc(r.neto), r.ing.length ? `${r.ing.map((x) => x.persona).join(' + ')} · quincena ${r.q.numero === 1 ? 'del 12' : 'del 26'} (neto)` : 'Sin salario anotado'),
+        stat(r.agui.length ? 'Salario + aguinaldo' : 'Salario', crc(r.neto), [r.ing.length ? `${r.ing.map((x) => x.persona).join(' + ')} · quincena ${r.q.numero === 1 ? 'del 12' : 'del 26'} (neto)` : 'Sin salario anotado', ...r.agui.map(aguiTxt)].join(' · ')),
         stat('Por pagar', crc(r.porPagar), `${r.pagos.length} pago(s) con fecha${r.pagos.some((p) => p.tipo === 'tarjeta') ? ' · incluye la tarjeta Wink' : ''}`),
         stat('Día a día (estimado)', crc(r.estVar), `Súper, salidas, transporte… (${r.estBase})`)),
       h('div', { class: `proy-total${neg ? ' bad' : ''}` }, h('span', {}, neg ? 'Faltaría' : 'Quedaría libre'), h('b', {}, quedaTxt)),
@@ -68,7 +70,7 @@ function secProyeccion(ctx, D, hoy) {
 function secQuincena(ctx, D, B, hoy) {
   const { q } = B;
   const dia = Math.min(daysBetween(q.inicio, hoy) + 1, q.dias);
-  const ingSub = `Salario de ${B.ing.map((r) => r.persona).join(' + ') || '—'} ${crc(B.neto)} neto (${crc(B.bruto)} bruto − CCSS)`
+  const ingSub = `Salario de ${B.ing.map((r) => r.persona).join(' + ') || '—'} ${crc(B.neto - C.sum(B.agui, (a) => a.neto))} neto (${crc(B.bruto)} bruto − CCSS)${B.agui.length ? ` + ${B.agui.map(aguiTxt).join(' + ')}` : ''}`
     + (B.saldo ? ` + saldo ${B.saldos.map((s) => (s.moneda === 'USD' ? `${usd(s.monto)} ≈ ${crc(s.crc)}` : `${crc(s.monto)}${s.donde && s.donde !== 'Salario' ? ` (${s.donde.toLowerCase()})` : ''}`)).join(' + ')}` : '');
   const items = [
     ...B.porPagar.map((f) => ({ fecha: f.prox, nombre: f.nombre, monto: f.monto_crc, extra: f.moneda === 'USD' ? usd(f.monto) : '', quien: f.quien })),

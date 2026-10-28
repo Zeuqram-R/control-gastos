@@ -63,6 +63,28 @@ export function ingresosNetos(ingresos) {
   });
 }
 
+// Aguinaldo (Costa Rica): promedio del salario bruto de dic. a nov., sin rebajos de CCSS ni renta.
+// Proporcional si la persona entró a mitad del período (campo `desde` en su salario). Se paga a más tardar el 20 de diciembre.
+export function aguinaldoDe(ingresos, anio) {
+  const ini = `${anio - 1}-12-01`, fin = `${anio}-11-30`;
+  const dias = daysBetween(ini, fin) + 1;
+  const porPersona = new Map();
+  for (const r of ingresos.filter((x) => (x.concepto || 'Salario') === 'Salario' && x.quincena)) {
+    const p = porPersona.get(r.persona) || { mensual: 0, desde: null };
+    p.mensual += Number(r.bruto) || 0;
+    if (r.desde && (!p.desde || r.desde < p.desde)) p.desde = r.desde;
+    porPersona.set(r.persona, p);
+  }
+  return [...porPersona].map(([persona, p]) => {
+    const desde = p.desde && p.desde > ini ? p.desde : ini;
+    if (desde > fin) return null;
+    const trabajados = daysBetween(desde, fin) + 1;
+    return { persona, concepto: 'Aguinaldo', fecha: `${anio}-12-20`, bruto: Math.round(p.mensual * trabajados / dias), deduccion: 0,
+      neto: Math.round(p.mensual * trabajados / dias), proporcional: trabajados < dias, desde: p.desde };
+  }).filter(Boolean);
+}
+const aguinaldosEn = (ingresos, q) => aguinaldoDe(ingresos, Number(q.fin.slice(0, 4))).filter((a) => a.fecha >= q.inicio && a.fecha <= q.fin);
+
 export function recurrentesCRC(recurrentes, tc) {
   const venta = tc ? Number(tc.venta) : null;
   return recurrentes.map((f) => {
@@ -204,7 +226,8 @@ export function balanceQuincena(D, hoy) {
   const q = quincenaDe(hoy);
   const tc = ultimoTC(D.tipo_cambio);
   const ing = ingresosNetos(D.ingresos).filter((r) => r.quincena === q.numero);
-  const neto = sum(ing, (r) => r.neto), bruto = sum(ing, (r) => r.bruto);
+  const agui = aguinaldosEn(D.ingresos, q);
+  const neto = sum(ing, (r) => r.neto) + sum(agui, (r) => r.neto), bruto = sum(ing, (r) => r.bruto);
   const saldos = saldosCRC(D.saldos, tc);
   const saldo = sum(saldos, (s) => s.crc);
   const pagRec = new Map(D.pagos_recurrentes.map((p) => [p.id, p]));
@@ -222,7 +245,7 @@ export function balanceQuincena(D, hoy) {
   const gastado = sum(movs, (m) => m.monto);
   const fijos = sum(porPagar, (f) => f.monto_crc), deu = sum(deudasQ, (d) => d.crc);
   return {
-    q, tc, ing, neto, bruto, saldos, saldo, porPagar, deudasQ, fijos, deu, tachado, gastado, wink,
+    q, tc, ing, agui, neto, bruto, saldos, saldo, porPagar, deudasQ, fijos, deu, tachado, gastado, wink,
     sinFecha: activos.filter((f) => !f.dia).length,
     queda: neto + saldo - fijos - deu - (gastado - wink),
   };
@@ -409,7 +432,8 @@ export function proyeccion(D, hoy, n = 12) {
   for (let i = 0; i < n; i++) {
     const q = quincenaDe(addDays(prev.q.fin, 1));
     const ing = netos.filter((r) => r.quincena === q.numero);
-    const neto = sum(ing, (r) => r.neto);
+    const agui = aguinaldosEn(D.ingresos, q);
+    const neto = sum(ing, (r) => r.neto) + sum(agui, (r) => r.neto);
     const pagos = [];
     for (const f of recs) {
       if (!aplica(f, D.cuentas || [])) continue;
@@ -423,7 +447,7 @@ export function proyeccion(D, hoy, n = 12) {
     pagos.sort((a, b) => a.fecha.localeCompare(b.fecha));
     const porPagar = sum(pagos, (p) => p.monto);
     const queda = prev.queda + neto - porPagar - estVar;
-    const r = { q, ing, neto, arrastre: prev.queda, pagos, porPagar, estVar, estBase, queda };
+    const r = { q, ing, agui, neto, arrastre: prev.queda, pagos, porPagar, estVar, estBase, queda };
     out.push(r);
     prev = { q, queda, wink: 0 };
   }
