@@ -459,3 +459,15 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .per-t { text-align: center; flex: 1; }
 .per-t b { display: block; font-size: 16.5px; }
 .per-t .sub { font-size: 12.5px; color: var(--muted); }
+
+/* Bloqueo */
+html.locked body { overflow: hidden; }
+html.locked #app { filter: blur(18px); pointer-events: none; }
+.lockscreen { position: fixed; inset: 0; z-index: 200; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); display: grid; place-items: center; padding: 24px; }
+.lock-box { text-align: center; max-width: 320px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.lock-icon { width: 72px; height: 72px; border-radius: 18px; }
+.lock-box h2 { margin: 6px 0 0; font-size: 22px; }
+.lock-msg { margin: 0 0 10px; color: var(--muted); }
+.lock-btn { min-width: 240px; }
+.lock-err { color: var(--bad); font-size: 13.5px; margin: 0; }
+.lock-reset { margin-top: 18px; color: var(--muted); font-size: 13px; }

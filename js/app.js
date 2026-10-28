@@ -3,13 +3,15 @@ import { GitHubError } from './github.js';
 
 import { $, h, ago, privacy, preloadPhotos } from './ui.js';
 import { prefs } from './prefs.js';
+import { lock, iniciarCandado } from './lock.js';
+let lockDisponible = false;
 import { viewResumen, viewCategoria } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.2';
+const APP_VERSION = '5.3';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -300,6 +302,20 @@ function viewAjustes() {
         seg([['normal', 'Normal'], ['grande', 'Grande'], ['mayor', 'Más grande']], prefs.get('letra', 'normal'), (k) => { prefs.set('letra', k); applyPrefs(); render(); }, 'three'))),
 
     h('section', { class: 'card' },
+      h('h2', {}, 'Seguridad'),
+      lockDisponible ? [
+        sw('aj-lock', 'Bloquear con Face ID', 'Pide Face ID (o el código del aparato) al abrir la app. Se activa solo en este aparato.', lock.activo, async (v) => {
+          if (v) {
+            try { await lock.activar(c.persona, c.dispositivo); toast('Listo: la app pide Face ID al abrir.'); }
+            catch (e) { toast(e.name === 'NotAllowedError' ? 'Se canceló. No se activó el bloqueo.' : `No se pudo activar (${e.name}).`); }
+          } else { lock.desactivar(); toast('Bloqueo quitado en este aparato.'); }
+          render();
+        }),
+        lock.activo ? h('div', { class: 'field', style: { marginTop: '14px', marginBottom: '0' } }, h('label', {}, 'Volver a pedir Face ID después de'),
+          seg([['0', 'Al salir'], ['1', '1 min'], ['5', '5 min'], ['30', '30 min']], String(lock.config.espera ?? 1), (k) => { lock.setEspera(Number(k)); render(); })) : null,
+      ] : h('p', { class: 'note', style: { margin: 0 } }, 'Este aparato no permite Face ID / Touch ID para apps web (o no está configurado).')),
+
+    h('section', { class: 'card' },
       h('h2', {}, 'Este dispositivo'),
       h('div', { class: 'field' }, h('label', {}, '¿Quién lo usa?'),
         seg([['Jose', 'Jose'], ['Ali', 'Ali']], c.persona, async (k) => { await sync.updateConfig({ persona: k }); toast(`Ahora este aparato es de ${k}.`); render(); })),
@@ -483,6 +499,7 @@ function blockZoom() {
 
 async function start() {
   blockZoom();
+  lock.disponible().then((v) => { lockDisponible = v; if (page === 'ajustes') render(); });
   applyTheme(getTheme());
   if ('serviceWorker' in navigator) {
     try {
@@ -500,6 +517,7 @@ async function start() {
     } catch (e) { /* sin service worker: la app funciona igual con internet */ }
   }
   const ok = await sync.init();
+  if (ok) iniciarCandado(async () => { await sync.disconnect(); go('setup'); });
   let h0 = location.hash.slice(1);
   if (h0.startsWith('producto/')) { productoActual = decodeURIComponent(h0.slice(9)); h0 = 'producto'; back = 'productos'; }
   if (h0.startsWith('categoria/')) { catActual = decodeURIComponent(h0.slice(10)); h0 = 'categoria'; back = 'resumen'; }
