@@ -18,7 +18,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.13';
+const APP_VERSION = '5.14';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -613,14 +613,33 @@ function diagText() {
 
 // Jalar hacia abajo para actualizar.
 // Deslizar desde el borde izquierdo hacia adentro = botón "<" (solo en las páginas que tienen regresar).
+// Como pasar página en Books: la página actual se vuelve una tarjeta que se va con el dedo,
+// y la anterior ya está dibujada debajo (así no queda la pantalla en negro mientras carga).
 function setupSwipeBack() {
-  const main = $('#main');
-  const EDGE = 28, TRIGGER = 90;
-  let x0 = null, y0 = 0, dx = 0, activo = false, t0 = 0;
-  const reset = (anim) => { main.style.transition = anim ? 'transform .25s cubic-bezier(.2,.8,.2,1), opacity .25s' : 'none'; main.style.transform = ''; main.style.opacity = ''; };
+  const EDGE = 28;
+  let x0 = null, y0 = 0, dx = 0, activo = false, t0 = 0, card = null, desde = null, scrollDesde = 0;
+  const armarTarjeta = () => {
+    const top = $('.topbar'), main = $('#main');
+    card = document.createElement('div');
+    card.className = 'swipe-card';
+    const tb = top.cloneNode(true);
+    const body = document.createElement('div');
+    body.className = 'swipe-body';
+    const mc = main.cloneNode(true);
+    mc.style.marginTop = `${-window.scrollY}px`;
+    mc.style.transform = '';
+    body.append(mc);
+    card.append(tb, body);
+    for (const el of card.querySelectorAll('[id]')) el.removeAttribute('id');
+    document.body.append(card);
+    desde = page; scrollDesde = window.scrollY;
+    // La página anterior se dibuja debajo mientras el dedo arrastra la tarjeta.
+    requestAnimationFrame(() => go(back));
+  };
+  const quitar = () => { card?.remove(); card = null; };
   addEventListener('touchstart', (e) => {
     x0 = null;
-    if (!SUB.has(page) || !sync.config || e.touches.length !== 1 || document.querySelector('.sheet-bg, .viewer, .lockscreen')) return;
+    if (card || !SUB.has(page) || !sync.config || e.touches.length !== 1 || document.querySelector('.sheet-bg, .viewer, .lockscreen')) return;
     const t = e.touches[0];
     if (t.clientX > EDGE) return;
     x0 = t.clientX; y0 = t.clientY; dx = 0; activo = false; t0 = Date.now();
@@ -630,24 +649,30 @@ function setupSwipeBack() {
     const t = e.touches[0];
     const d = t.clientX - x0, dy = Math.abs(t.clientY - y0);
     if (!activo && (d < 8 || dy > d)) { if (dy > 12 || d < -4) x0 = null; return; }
-    activo = true;
-    dx = Math.max(0, d);
     if (e.cancelable) e.preventDefault();
-    main.style.transition = 'none';
-    main.style.transform = `translateX(${dx * 0.9}px)`;
-    main.style.opacity = String(Math.max(0.4, 1 - dx / (innerWidth * 1.4)));
+    if (!activo) { activo = true; armarTarjeta(); }
+    dx = Math.max(0, d);
+    card.style.transition = 'none';
+    card.style.transform = `translateX(${dx}px)`;
   }, { passive: false });
-  addEventListener('touchend', () => {
-    if (x0 == null || !activo) { x0 = null; return; }
+  const soltar = () => {
+    if (x0 == null || !activo || !card) { x0 = null; return; }
     x0 = null;
+    const c = card;
     const rapido = dx > 40 && Date.now() - t0 < 250;
-    if (dx >= TRIGGER || rapido) {
-      main.style.transition = 'transform .18s ease-out, opacity .18s';
-      main.style.transform = `translateX(${innerWidth}px)`; main.style.opacity = '0';
-      setTimeout(() => { reset(false); go(back); }, 170);
-    } else reset(true);
-  });
-  addEventListener('touchcancel', () => { if (x0 != null) { x0 = null; reset(true); } });
+    if (dx >= innerWidth * 0.3 || rapido) {
+      c.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1)';
+      c.style.transform = `translateX(${innerWidth + 24}px)`;
+      setTimeout(quitar, 230);
+    } else {
+      // Se arrepintió: la tarjeta vuelve y se queda en la misma página.
+      c.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1)';
+      c.style.transform = 'translateX(0)';
+      setTimeout(() => { go(desde); window.scrollTo({ top: scrollDesde }); quitar(); }, 230);
+    }
+  };
+  addEventListener('touchend', soltar);
+  addEventListener('touchcancel', soltar);
 }
 
 function setupPullToRefresh() {

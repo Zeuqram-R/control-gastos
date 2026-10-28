@@ -201,7 +201,7 @@ export function createSync({ onChange, onStatus, onLog }) {
       if (cached && cached.sha === sha) return cached.blob;
       if (!client) return cached ? cached.blob : null;
       try {
-        const blob = b64ToBlob(await client.blob(sha), 'image/webp');
+        const blob = b64ToBlob(await client.blob(sha), /\.jpe?g$/i.test(path) ? 'image/jpeg' : /\.png$/i.test(path) ? 'image/png' : 'image/webp');
         await store.set('blobs', path, { sha, blob });
         return blob;
       } catch (e) {

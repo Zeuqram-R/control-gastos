@@ -111,8 +111,8 @@ export function preloadPhotos(sync, paths) {
 export const empty = (text) => h('div', { class: 'empty' }, text);
 
 // Visor de foto a pantalla completa: pellizcar para acercar, doble toque para acercar/alejar, arrastrar para mover.
-export function openPhoto(sync, clave, title) {
-  const big = `fotos/grande/${clave}.webp`, mini = `fotos/mini/${clave}.webp`;
+export function openPhoto(sync, clave, title, ruta) {
+  const big = ruta || `fotos/grande/${clave}.webp`, mini = ruta || `fotos/mini/${clave}.webp`;
   const img = h('img', { alt: title || '', draggable: 'false' });
   const stage = h('div', { class: 'viewer-stage' }, img);
   const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
@@ -126,6 +126,7 @@ export function openPhoto(sync, clave, title) {
   document.body.append(ov);
   document.addEventListener('keydown', onKey);
   (async () => {
+    if (ruta && fotosLocales.has(ruta)) { img.src = fotosLocales.get(ruta); return; }
     const src = sync.photoExists(big) ? big : mini;
     const blob = await sync.photo(src);
     if (blob) img.src = URL.createObjectURL(blob);
@@ -194,3 +195,33 @@ export function campoBuscar({ id, placeholder, value, onInput }) {
   x.addEventListener('click', () => { input.value = ''; x.hidden = true; onInput(''); input.focus(); });
   return h('div', { class: 'search-wrap' }, input, x);
 }
+
+// Fotos por ruta (p. ej. la de un deseo). Las recién tomadas se ven al instante, antes de que terminen de subir.
+const fotosLocales = new Map();
+export function fotoLocal(ruta, blob) { fotosLocales.set(ruta, URL.createObjectURL(blob)); }
+export function fotoRuta(sync, ruta, { cls = 'thumb', title = '' } = {}) {
+  const box = h('span', { class: `${cls} empty` });
+  if (!ruta) return box;
+  const put = (url) => {
+    box.className = `${cls} can-open`;
+    box.setAttribute('role', 'button');
+    box.setAttribute('aria-label', `Ver foto de ${title}`);
+    box.addEventListener('click', (e) => { e.stopPropagation(); openPhoto(sync, null, title, ruta); });
+    box.replaceChildren(h('img', { src: url, alt: '', decoding: 'async' }));
+  };
+  if (fotosLocales.has(ruta)) { put(fotosLocales.get(ruta)); return box; }
+  if (!sync.photoExists(ruta)) return box;
+  sync.photo(ruta).then((blob) => { if (blob) { fotosLocales.set(ruta, URL.createObjectURL(blob)); put(fotosLocales.get(ruta)); } });
+  return box;
+}
+
+// Achica una foto (lado mayor `max` px, JPEG) para subirla rápido.
+export async function achicarFoto(file, max = 1200, q = 0.82) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise((r) => c.toBlob(r, 'image/jpeg', q));
+}
+export const blobABase64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });

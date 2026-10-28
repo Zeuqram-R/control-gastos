@@ -366,7 +366,7 @@ export function catalogo(compras, productos) {
     return {
       clave, producto: p.producto || orden[orden.length - 1].producto, grupo: p.grupo || p.producto || '', categoria: p.categoria || orden[0].categoria,
       n_supers: ultimos.length, ahorro: peor.p - mejor.p, gasto_total: sum(orden, (d) => d.total), iva: Number(orden[orden.length - 1].iva_pct) || null,
-      otros_nombres: p.otros_nombres || [], alternativa: p.alternativa_1 || '',
+      otros_nombres: p.otros_nombres || [], nombres_lugar: p.nombres_lugar || [], alternativa: p.alternativa_1 || '',
       dueno: p.dueno || 'Casa', ubicacion: p.ubicacion || '', unidad: orden[0].unidad,
       perecedero: p.perecedero === true || p.perecedero === 'si', vida_util_dias: Number(p.vida_util_dias) || null,
       compras: fechas.length, primera: fechas[0], ultima: fechas[fechas.length - 1],

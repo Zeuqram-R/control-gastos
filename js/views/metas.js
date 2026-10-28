@@ -1,5 +1,5 @@
 // Página Metas: metas de ahorro, cuánto apartar cada quincena y si la proyección alcanza.
-import { h, crc, dayShort, todayCR, addDays, stat, empty } from '../ui.js';
+import { h, crc, dayShort, todayCR, addDays, stat, empty, fotoRuta, fotoLocal, achicarFoto, blobABase64 } from '../ui.js';
 import * as C from '../calc.js';
 import { abrirHoja } from '../fuente.js';
 import { abrirAlcanza } from '../alcanza.js';
@@ -125,17 +125,41 @@ function secDeseos(ctx, D, nueva) {
     let prio = d?.prioridad || 2, quien = d?.para || 'Ambos';
     const segOf = (opts, get, set) => { const w = h('div', { class: 'seg wrap' }); const paint = () => { for (const b of w.children) b.setAttribute('aria-pressed', String(b.dataset.v === String(get()))); }; for (const [v, t] of opts) w.append(h('button', { type: 'button', 'data-v': v, onclick: () => { set(v); paint(); } }, t)); paint(); return w; };
     if (d) { nom.value = d.nombre; pre.value = d.precio ? String(d.precio) : ''; nota.value = d.nota || ''; }
+    // Foto: ayuda cuando el nombre es muy general ("zapatos", "lámpara").
+    const ft = { blob: null, quitar: false };
+    const prev = h('div', { class: 'deseo-foto' });
+    const fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async (e) => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (!f) return;
+      try { ft.blob = await achicarFoto(f); ft.quitar = false; pintarFoto(); } catch (er) { toast('No se pudo leer esa foto.'); }
+    } });
+    const pintarFoto = () => {
+      const tiene = ft.blob || (d?.foto && !ft.quitar);
+      prev.replaceChildren(
+        tiene ? (ft.blob ? h('span', { class: 'thumb big-thumb' }, h('img', { src: URL.createObjectURL(ft.blob), alt: '' })) : fotoRuta(sync, d.foto, { cls: 'thumb big-thumb', title: d.nombre })) : null,
+        h('div', { class: 'deseo-foto-btns' },
+          h('button', { type: 'button', class: 'btn secondary sm', onclick: () => fileIn.click() }, tiene ? 'Cambiar foto' : 'Agregar foto'),
+          tiene ? h('button', { type: 'button', class: 'btn secondary sm', onclick: () => { ft.blob = null; ft.quitar = true; pintarFoto(); } }, 'Quitar') : null));
+    };
+    pintarFoto();
     const cerrar = abrirHoja({ titulo: d ? 'Editar deseo' : 'Agregar a la lista de deseos', cuerpo: [
       h('div', { class: 'field' }, h('label', { for: 'd-nombre' }, '¿Qué?'), nom),
       h('div', { class: 'field' }, h('label', { for: 'd-precio' }, 'Precio aproximado (₡)'), pre),
       h('div', { class: 'field' }, h('label', {}, '¿Qué tan pronto?'), segOf(PRIOS, () => prio, (v) => { prio = Number(v); })),
       h('div', { class: 'field' }, h('label', {}, '¿Para quién?'), segOf([['Ambos', 'Los dos'], ['Jose', 'Jose'], ['Ali', 'Ali']], () => quien, (v) => { quien = v; })),
+      h('div', { class: 'field' }, h('label', {}, 'Foto (opcional)'), prev, fileIn),
       h('div', { class: 'field' }, h('label', { for: 'd-nota' }, 'Nota'), nota),
       err,
       h('button', { type: 'button', class: 'btn block', onclick: async () => {
         if (!nom.value.trim()) { err.textContent = '¿Qué quieren comprar?'; err.hidden = false; return; }
         const precio = Math.round(Number(String(pre.value).replace(/[^\d]/g, ''))) || null;
-        const rec = { id: d?.id || `W${Date.now().toString(36)}`, nombre: nom.value.trim(), precio, prioridad: prio, para: quien, nota: nota.value.trim(), creado: d?.creado || hoy, por: d?.por || cfg.persona, estado: 'pendiente' };
+        const rec = { id: d?.id || `W${Date.now().toString(36)}`, nombre: nom.value.trim(), precio, prioridad: prio, para: quien, nota: nota.value.trim(), creado: d?.creado || hoy, por: d?.por || cfg.persona, estado: 'pendiente', foto: ft.quitar ? null : (d?.foto || null) };
+        if (ft.blob) {
+          const ruta = `fotos/deseos/${rec.id}-${Date.now().toString(36)}.jpg`;
+          fotoLocal(ruta, ft.blob);
+          await sync.subir([{ path: ruta, b64: await blobABase64(ft.blob) }], `${cfg.persona}: foto del deseo «${rec.nombre}»`, { resumen: `Foto: ${rec.nombre}` });
+          rec.foto = ruta;
+        }
         await sync.mutate('deseos', { kind: 'upsert', record: rec }, `${d ? 'edita' : 'agrega'} deseo: ${rec.nombre}`);
         cerrar(); toast(d ? 'Deseo actualizado.' : 'Agregado a la lista de deseos.');
       } }, d ? 'Guardar' : 'Agregar'),
@@ -151,7 +175,7 @@ function secDeseos(ctx, D, nueva) {
     deseos.length ? h('div', { class: 'card' },
       h('p', { class: 'note', style: { marginTop: 0 } }, `${deseos.length} cosa(s)${total ? ` · unos ${crc(total)} en total` : ''}. Tocá una para editarla; "Meta" la convierte en meta de ahorro.`),
       h('ul', { class: 'rows' }, deseos.map((d) => h('li', {},
-        h('span', { class: `prio p${d.prioridad || 2}`, title: PRIOS.find(([v]) => v === (d.prioridad || 2))[1] }),
+        h('div', { class: 'deseo-img' }, fotoRuta(sync, d.foto, { title: d.nombre }), h('span', { class: `prio p${d.prioridad || 2}`, title: PRIOS.find(([v]) => v === (d.prioridad || 2))[1] })),
         h('div', { class: 'main tap', role: 'button', onclick: () => agregar(d) }, d.nombre,
           h('span', { class: 'sub' }, [PRIOS.find(([v]) => v === (d.prioridad || 2))[1], d.para && d.para !== 'Ambos' ? `para ${d.para}` : null, d.nota].filter(Boolean).join(' · '))),
         h('div', { class: 'deseo-acc' },

@@ -24,7 +24,7 @@ export function viewProductos(ctx) {
   const fill = () => {
     const q = state.buscar.trim().toLowerCase();
     let rows = D.cat.filter((p) => (!state.dueno || p.dueno === state.dueno)
-      && (!q || `${p.producto} ${p.categoria} ${p.otros_nombres.join(' ')}`.toLowerCase().includes(q)));
+      && (!q || `${p.producto} ${p.categoria} ${p.otros_nombres.join(' ')} ${p.nombres_lugar.map((n) => n.nombre).join(' ')}`.toLowerCase().includes(q)));
     const by = {
       nombre: (a, b) => a.producto.localeCompare(b.producto),
       ref: (a, b) => b.mejor_ref - a.mejor_ref,
@@ -73,6 +73,28 @@ export function viewProductos(ctx) {
     secIva(D),
     secCompras(ctx, D),
   ];
+}
+
+// Cómo se llama este producto en cada lugar (de los tiquetes y de los nombres que se le han asociado).
+function secNombres(p, rows) {
+  const porLugar = new Map();
+  const add = (lugar, nombre) => {
+    if (!nombre) return;
+    const k = lugar || 'Otros';
+    if (!porLugar.has(k)) porLugar.set(k, new Set());
+    if (String(nombre).toLowerCase() !== p.producto.toLowerCase()) porLugar.get(k).add(String(nombre));
+  };
+  for (const r of rows) add(r.supermercado, r.codigo_ticket);
+  for (const n of p.nombres_lugar || []) add(n.lugar, n.nombre);
+  const sueltos = (p.otros_nombres || []).filter((n) => ![...porLugar.values()].some((set) => set.has(n)));
+  if (sueltos.length) for (const n of sueltos) add('Otros nombres', n);
+  const filas = [...porLugar].filter(([, set]) => set.size);
+  if (!filas.length) return null;
+  return h('section', { class: 'card' },
+    h('h2', {}, 'Cómo se llama en cada lugar'),
+    h('p', { class: 'note' }, 'El nombre de arriba es el normalizado; estos son los que salen en los tiquetes o como lo llaman en cada lugar.'),
+    h('ul', { class: 'rows' }, filas.map(([lugar, set]) => h('li', {},
+      h('div', { class: 'main' }, lugar, h('span', { class: 'sub' }, [...set].join(' · ')))))));
 }
 
 function secComparar(D, openProduct) {
@@ -128,8 +150,8 @@ export function viewProducto(ctx) {
       foto,
       h('div', { class: 'phead-info' },
         h('h2', {}, p.producto),
-        p.otros_nombres.length ? h('p', { class: 'note', style: { margin: '2px 0 6px' } }, `También: ${p.otros_nombres.join(', ')}`) : null,
         h('div', { class: 'tags' }, tags.map((t) => h('span', { class: 'pill' }, t))))),
+    secNombres(p, rows),
 
     h('section', { class: 'card' },
       h('div', { class: 'qgrid' },
