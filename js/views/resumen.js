@@ -1,9 +1,9 @@
 // Página Resumen: quincena actual, gasto por tipo, el mes, perecederos, gastos, súper, IVA y compras.
-import { h, privacy, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty } from '../ui.js';
+import { h, privacy, addDays, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty } from '../ui.js';
 import * as C from '../calc.js';
 import { preguntasAbiertas } from './facturas.js';
 
-const state = { buscar: '', todoVenc: false, todoCompras: false };
+const state = { buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0 };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
 
 let openCat = null;
@@ -26,7 +26,7 @@ export function viewResumen(ctx) {
     secTipos(D, B, hoy),
     secMes(D),
     secVencimientos(ctx, cat, D.eventos, hoy),
-    secGastos(C.movimientos(D)),
+    secGastos(ctx, C.movimientos(D)),
     secSuper(D),
     secIva(D),
     secCompras(ctx, D),
@@ -141,16 +141,42 @@ function secVencimientos(ctx, cat, eventos, hoy) {
     all.length > v.length ? more(all.length - v.length, 'todoVenc', ctx.rerender) : null);
 }
 
-function secGastos(movs) {
+// Movimientos por mes o por semana, con flechas para ir a periodos anteriores (hasta el primero).
+function secGastos(ctx, movs) {
   const TIPO = { rec: 'Recurrente', deuda: 'Deuda', abono: 'Abono' };
+  const hoy = todayCR();
+  const semanaDe = (f) => { const d = new Date(`${f}T00:00:00Z`); const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow); return d.toISOString().slice(0, 10); };
+  const mesDe = (f) => f.slice(0, 7);
+  const keyOf = state.movModo === 'mes' ? mesDe : semanaDe;
+  // Todos los periodos desde el primer movimiento hasta hoy (aunque alguno no tenga movimientos).
+  const primero = movs.length ? movs[movs.length - 1].fecha : hoy;
+  const periodos = [];
+  if (state.movModo === 'mes') {
+    let [y, m] = primero.slice(0, 7).split('-').map(Number);
+    const [hy, hm] = hoy.slice(0, 7).split('-').map(Number);
+    while (y < hy || (y === hy && m <= hm)) { periodos.push(`${y}-${String(m).padStart(2, '0')}`); m++; if (m > 12) { m = 1; y++; } }
+  } else {
+    for (let w = semanaDe(primero); w <= semanaDe(hoy); w = addDays(w, 7)) periodos.push(w);
+  }
+  state.movOff = Math.max(0, Math.min(state.movOff, periodos.length - 1));
+  const actual = periodos[periodos.length - 1 - state.movOff];
+  const lista = movs.filter((g) => keyOf(g.fecha) === actual);
+  const titulo = state.movModo === 'mes'
+    ? `${MESES[Number(actual.slice(5, 7)) - 1].charAt(0).toUpperCase()}${MESES[Number(actual.slice(5, 7)) - 1].slice(1)} ${actual.slice(0, 4)}`
+    : `${dayShort(actual)} – ${dayShort(addDays(actual, 6))}`;
+  const nav = (lbl, aria, delta, disabled) => h('button', { type: 'button', class: 'icon-btn', 'aria-label': aria, disabled: disabled || null, onclick: () => { state.movOff += delta; ctx.rerender(); } }, lbl);
+  const modo = (k, t) => h('button', { type: 'button', 'aria-pressed': String(state.movModo === k), onclick: () => { if (state.movModo !== k) { state.movModo = k; state.movOff = 0; ctx.rerender(); } } }, t);
   return h('section', { id: 'r-gastos', class: 'card sec' },
-    h('h2', {}, 'Movimientos'),
-    h('p', { class: 'note' }, 'Gastos, pagos recurrentes tachados, deudas pagadas y abonos, el más reciente primero.'),
-    movs.length ? h('ul', { class: 'rows' }, movs.map((g) => h('li', {},
+    h('div', { class: 'card-head' }, h('h2', {}, 'Movimientos'), h('div', { class: 'seg mini' }, modo('mes', 'Mes'), modo('semana', 'Semana'))),
+    h('div', { class: 'per-nav' },
+      nav('‹', state.movModo === 'mes' ? 'Mes anterior' : 'Semana anterior', 1, state.movOff >= periodos.length - 1),
+      h('div', { class: 'per-t' }, h('b', {}, titulo), h('span', { class: 'sub' }, `${lista.length} movimiento(s) · ${crc(C.sum(lista, (g) => g.monto))}`)),
+      nav('›', state.movModo === 'mes' ? 'Mes siguiente' : 'Semana siguiente', -1, state.movOff <= 0)),
+    lista.length ? h('ul', { class: 'rows' }, lista.map((g) => h('li', {},
       h('div', { class: 'main' }, g.titulo,
         h('span', { class: 'sub' }, [dayShort(g.fecha), g.sub, g.categoria, g.fuente].filter(Boolean).join(' · ')),
         g.tipo === 'gasto' ? (g.gtipo ? h('span', { class: `pill ${g.gtipo === 'Pendiente' ? 'pend' : g.gtipo === 'Fijo' ? 'rec' : ''}` }, g.gtipo) : null) : h('span', { class: `pill ${g.tipo === 'rec' ? 'rec' : 'pend'}` }, TIPO[g.tipo])),
-      h('span', { class: 'amt' }, crc(g.monto))))) : empty('Todavía no hay movimientos.'));
+      h('span', { class: 'amt' }, crc(g.monto))))) : empty(state.movModo === 'mes' ? 'No hay movimientos este mes.' : 'No hay movimientos esta semana.'));
 }
 
 function secSuper(D) {

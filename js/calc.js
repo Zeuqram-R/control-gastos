@@ -152,10 +152,10 @@ export function movimientos(D) {
   const out = [];
   for (const g of D.gastos) {
     if (deCuenta.has(g.fuente)) continue;
-    out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.categoria || 'Sin categoría', monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [g.descripcion, g.subcategoria].filter(Boolean).join(' · '), tipo: 'gasto', gtipo: g.tipo });
+    out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.categoria || 'Sin categoría', monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [...new Set([g.descripcion, g.subcategoria].filter(Boolean))].join(' · '), tipo: 'gasto', gtipo: g.tipo });
   }
   for (const p of D.pagos_recurrentes) {
-    if (deCuenta.has(p.fuente)) continue;
+    if (deCuenta.has(p.fuente) || p.no_cuenta) continue; // no_cuenta: pagado antes de llevar el control
     const r = recs.get(p.recurrente || p.id.split('_')[0]) || {};
     out.push({ id: `pr:${p.id}`, fecha: d10(p.fecha), categoria: r.categoria || 'Suscripciones y pagos recurrentes', monto: Number(p.monto_crc) || 0, fuente: p.fuente, titulo: r.nombre || 'Pago recurrente', sub: `Pago tachado · vence ${dayShort(p.vence)}`, tipo: 'rec', gtipo: 'Fijo' });
   }
