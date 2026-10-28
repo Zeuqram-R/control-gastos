@@ -22,6 +22,7 @@ export function createSync({ onChange, onStatus, onLog }) {
   const files = new Map(); // path -> { sha, data }
   const shas = new Map(); // path -> sha (todo el repo, incluye fotos)
   let queue = [];
+  let uploads = []; // commits de archivos (facturas) esperando internet
   let syncing = false;
   let again = false;
   let log = [];
@@ -30,7 +31,7 @@ export function createSync({ onChange, onStatus, onLog }) {
   const status = { state: 'idle', lastSync: null, pending: 0, message: '' };
 
   const emitStatus = (patch) => {
-    Object.assign(status, patch, { pending: queue.length });
+    Object.assign(status, patch, { pending: queue.length + uploads.length });
     onStatus && onStatus({ ...status });
   };
   const emitChange = () => onChange && onChange();
@@ -57,6 +58,15 @@ export function createSync({ onChange, onStatus, onLog }) {
     get status() { return { ...status }; },
     get log() { return log.slice(); },
     get queue() { return queue.slice(); },
+    get uploads() { return uploads.map((u) => ({ id: u.id, at: u.at, meta: u.meta, n: u.files.length })); },
+
+    // Subir varios archivos juntos (una factura: fotos + ficha). Si no hay internet, queda en cola.
+    async subir(files, message, meta) {
+      uploads.push({ id: `U${Date.now().toString(36)}`, at: new Date().toISOString(), files, message, meta: meta || {} });
+      await store.set('queue', 'uploads', uploads);
+      emitStatus({});
+      api.sync();
+    },
 
     async init() {
       cfg = (await store.get('config', 'cfg')) || null;
@@ -67,6 +77,7 @@ export function createSync({ onChange, onStatus, onLog }) {
       const sh = (await store.get('config', 'shas')) || {};
       for (const [p, s] of Object.entries(sh)) shas.set(p, s);
       queue = (await store.get('queue', 'ops')) || [];
+      uploads = (await store.get('queue', 'uploads')) || [];
       status.lastSync = (await store.get('config', 'lastSync')) || null;
       log = (await store.get('config', 'log')) || [];
       emitStatus({});
@@ -113,7 +124,7 @@ export function createSync({ onChange, onStatus, onLog }) {
 
     async disconnect() {
       await store.clearAll();
-      cfg = null; client = null; files.clear(); shas.clear(); queue = []; log = [];
+      cfg = null; client = null; files.clear(); shas.clear(); queue = []; uploads = []; log = [];
       emitStatus({ state: 'idle', lastSync: null });
       emitChange();
     },
@@ -241,7 +252,20 @@ export function createSync({ onChange, onStatus, onLog }) {
     if (changed) emitChange();
   }
 
+  async function flushUploads() {
+    while (uploads.length) {
+      const u = uploads[0];
+      emitStatus({ state: 'uploading', message: `Subiendo factura (${u.files.length} archivo${u.files.length === 1 ? '' : 's'})` });
+      await client.commitFiles(u.files, u.message);
+      uploads.shift();
+      await store.set('queue', 'uploads', uploads);
+      await addLog({ ok: true, tipo: 'subida', titulo: 'Subió una factura', detalle: u.meta?.resumen || u.message });
+      emitStatus({});
+    }
+  }
+
   async function flush() {
+    await flushUploads();
     while (queue.length) {
       emitStatus({ state: 'uploading', message: queue.length > 1 ? `Subiendo ${queue.length} cambios` : 'Subiendo 1 cambio' });
       const path = queue[0].file;

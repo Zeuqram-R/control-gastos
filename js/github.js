@@ -88,6 +88,21 @@ export function createClient(token) {
       const r = await call(`${base}/commits?path=${encodeURIComponent(path)}&sha=${REPO.branch}&per_page=1`);
       return r[0] ? { message: r[0].commit.message.split('\n')[0], at: r[0].commit.author.date } : null;
     },
+    // Varios archivos en un solo commit (así la factura y su ficha llegan juntas).
+    async commitFiles(files, message) {
+      const ref = await call(`${base}/git/ref/heads/${REPO.branch}`);
+      const parent = ref.object.sha;
+      const pc = await call(`${base}/git/commits/${parent}`);
+      const tree = [];
+      for (const f of files) {
+        const b = await call(`${base}/git/blobs`, { method: 'POST', body: JSON.stringify({ content: f.b64, encoding: 'base64' }) });
+        tree.push({ path: f.path, mode: '100644', type: 'blob', sha: b.sha });
+      }
+      const t = await call(`${base}/git/trees`, { method: 'POST', body: JSON.stringify({ base_tree: pc.tree.sha, tree }) });
+      const c = await call(`${base}/git/commits`, { method: 'POST', body: JSON.stringify({ message, tree: t.sha, parents: [parent] }) });
+      await call(`${base}/git/refs/heads/${REPO.branch}`, { method: 'PATCH', body: JSON.stringify({ sha: c.sha }) });
+      return c.sha;
+    },
     async putFile(path, b64, sha, message) {
       const r = await call(`${base}/contents/${encodeURI(path)}`, {
         method: 'PUT',

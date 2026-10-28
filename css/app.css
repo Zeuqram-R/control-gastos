@@ -422,3 +422,26 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .cuenta-proy { margin: 8px 0 0; font-weight: 600; font-size: 14.5px; }
 .cuenta-proy.bad { color: var(--bad); }
 .deuda.fija { cursor: default; }
+
+/* ---------- Fase 5: Facturas ---------- */
+.fac-quick { display: flex; align-items: center; gap: 12px; }
+.fac-quick .main { flex: 1; min-width: 0; }
+.fac-quick .sub { display: block; font-size: 13px; color: var(--muted); }
+.fac-quick.alert { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.fac-prevs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.fac-prev { position: relative; width: 92px; height: 120px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; }
+.fac-prev img { width: 100%; height: 100%; object-fit: cover; }
+.fac-prev .x-btn { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; background: rgba(0,0,0,.55); color: #fff; border: 0; font-size: 12px; }
+.fac-pdf { font-weight: 700; color: var(--muted); }
+.fac-add { width: 92px; height: 120px; border-radius: 10px; border: 1.5px dashed var(--line); background: transparent; color: var(--accent); font-weight: 600; font-size: 13px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.fac-add .plus { font-size: 28px; line-height: 1; }
+.seg.wrap { flex-wrap: wrap; }
+.seg.wrap button { flex: 1 1 auto; min-width: 72px; }
+.hdot.work { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); animation: pulse 1s infinite alternate; }
+.preguntas { border-color: var(--accent); }
+.pq { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.pq:last-child { border-bottom: 0; }
+.pq-q { font-weight: 600; }
+.pq-d { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.pq-ops { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; }
+.pq .row-add { margin: 6px 0 0; }

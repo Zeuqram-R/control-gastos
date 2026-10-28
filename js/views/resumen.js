@@ -1,6 +1,7 @@
 // Página Resumen: quincena actual, gasto por tipo, el mes, perecederos, gastos, súper, IVA y compras.
 import { h, privacy, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty } from '../ui.js';
 import * as C from '../calc.js';
+import { preguntasAbiertas } from './facturas.js';
 
 const state = { buscar: '', todoVenc: false, todoCompras: false };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
@@ -19,6 +20,7 @@ export function viewResumen(ctx) {
     h('nav', { class: 'chips', 'aria-label': 'Ir a' },
       [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Gastos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
         .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(`r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
+    secFacturas(ctx),
     secQuincena(D, B, hoy),
     secCuentas(ctx, D, B, hoy),
     secTipos(D, B, hoy),
@@ -35,7 +37,7 @@ function secQuincena(D, B, hoy) {
   const { q } = B;
   const dia = Math.min(daysBetween(q.inicio, hoy) + 1, q.dias);
   const ingSub = `Salario de ${B.ing.map((r) => r.persona).join(' + ') || '—'} ${crc(B.neto)} neto (${crc(B.bruto)} bruto − CCSS)`
-    + (B.saldo ? ` + saldo ${B.saldos.map((s) => `${s.moneda === 'USD' ? usd(s.monto) : crc(s.monto)} ≈ ${crc(s.crc)}`).join(' + ')}` : '');
+    + (B.saldo ? ` + saldo ${B.saldos.map((s) => (s.moneda === 'USD' ? `${usd(s.monto)} ≈ ${crc(s.crc)}` : `${crc(s.monto)}${s.donde && s.donde !== 'Salario' ? ` (${s.donde.toLowerCase()})` : ''}`)).join(' + ')}` : '');
   const items = [
     ...B.porPagar.map((f) => ({ fecha: f.prox, nombre: f.nombre, monto: f.monto_crc, extra: f.moneda === 'USD' ? usd(f.monto) : '', quien: f.quien })),
     ...B.deudasQ.map((d) => ({ fecha: String(d.fecha_limite).slice(0, 10), nombre: `${d.concepto} (${d.persona})`, monto: d.crc, extra: d.moneda === 'USD' ? usd(d.monto) : '', quien: d.de_quien })),
@@ -300,4 +302,15 @@ export function viewCategoria(ctx) {
         h('summary', {}, `${dayShort(ini)} – ${dayShort(C.quincenaDe(ini).fin)} · ${crc(C.sum(gs, (g) => g.monto))}`),
         h('ul', { class: 'rows' }, gs.map((g) => row({ fecha: g.fecha, titulo: g.comercio, sub: [g.descripcion, g.fuente].filter(Boolean).join(' · '), monto: g.monto, tipo: 'gasto' })))))) : null,
   ];
+}
+
+// Acceso rápido a subir facturas (y aviso si Claude dejó preguntas).
+function secFacturas(ctx) {
+  const pend = preguntasAbiertas(ctx.sync);
+  const cola = ctx.sync.uploads.length;
+  return h('section', { class: 'card fac-quick' + (pend.length ? ' alert' : '') },
+    h('div', { class: 'main' },
+      h('b', {}, pend.length ? `Claude tiene ${pend.length} pregunta${pend.length === 1 ? '' : 's'}` : 'Facturas'),
+      h('span', { class: 'sub' }, pend.length ? 'Sobre las últimas facturas. Tocá para contestar.' : cola ? `${cola} esperando internet para subir` : 'Subí la foto y Claude la anota.')),
+    h('button', { type: 'button', class: 'btn', onclick: () => ctx.go('facturas') }, pend.length ? 'Contestar' : 'Subir factura'));
 }

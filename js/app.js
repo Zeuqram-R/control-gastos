@@ -7,14 +7,15 @@ import { viewResumen, viewCategoria } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
+import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '4.1';
+const APP_VERSION = '5.0';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
 const sync = createSync({ onChange: () => { render(); warmPhotos(); }, onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
-const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', setup: 'Control de gastos' };
+const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', facturas: 'Facturas', setup: 'Control de gastos' };
 
 // Aviso abajo: aparece y se desvanece suave.
 function toast(msg, action, ms) {
@@ -50,7 +51,7 @@ function renderStatus(s) {
 }
 
 // ---------- Navegación ----------
-const SUB = new Set(['historial', 'ajustes', 'producto', 'categoria']);
+const SUB = new Set(['historial', 'ajustes', 'producto', 'categoria', 'facturas']);
 let catActual = null;
 function openCategoria(cat) { catActual = cat; go('categoria'); }
 let productoActual = null;
@@ -81,7 +82,7 @@ function render() {
   $('#page-title').textContent = page === 'categoria' && catActual ? (catActual === 'General' ? 'Quincena' : catActual) : (TITLES[page] || 'Control de gastos');
   $('#btn-back').hidden = !SUB.has(page) || !connected;
   $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
-  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), facturas: needData(viewFacturas), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
@@ -499,7 +500,7 @@ async function start() {
   if (h0.startsWith('producto/')) { productoActual = decodeURIComponent(h0.slice(9)); h0 = 'producto'; back = 'productos'; }
   if (h0.startsWith('categoria/')) { catActual = decodeURIComponent(h0.slice(10)); h0 = 'categoria'; back = 'resumen'; }
   const inicio = prefs.get('inicio', 'resumen');
-  page = ok ? (TITLES[h0] && !['setup', 'ajustes', 'historial'].includes(h0) && (h0 !== 'producto' || productoActual) && (h0 !== 'categoria' || catActual) ? h0 : (TITLES[inicio] ? inicio : 'resumen')) : 'setup';
+  page = ok ? (TITLES[h0] && !['setup', 'ajustes', 'historial', 'facturas'].includes(h0) && (h0 !== 'producto' || productoActual) && (h0 !== 'categoria' || catActual) ? h0 : (TITLES[inicio] ? inicio : 'resumen')) : 'setup';
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === page));
   render();
   renderStatus(sync.status);
