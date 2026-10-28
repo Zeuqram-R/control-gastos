@@ -21,7 +21,7 @@ export const lock = {
       publicKey: {
         challenge: rand(32),
         rp: { name: 'Control de gastos', id: location.hostname },
-        user: { id: rand(16), name: `${persona} · ${dispositivo}`, displayName: `${persona} (${dispositivo})` },
+        user: { id: rand(16), name: 'Control de gastos', displayName: 'Control de gastos' },
         pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
         authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
         timeout: 60000,
@@ -59,11 +59,12 @@ function mostrar(onReset) {
       <h2>Control de gastos</h2>
       <p class="lock-msg">Bloqueado</p>
       <button type="button" class="btn lock-btn">Desbloquear con Face ID</button>
+      <p class="lock-hint">Tocá en cualquier parte</p>
       <p class="lock-err" hidden></p>
       <button type="button" class="link-btn lock-reset">¿No funciona?</button>
     </div>`;
   document.body.append(overlay);
-  const btn = overlay.querySelector('.lock-btn'), err = overlay.querySelector('.lock-err');
+  const err = overlay.querySelector('.lock-err');
   const intentar = async () => {
     if (ocupado) return;
     ocupado = true; err.hidden = true;
@@ -74,14 +75,14 @@ function mostrar(onReset) {
       err.hidden = false;
     } finally { ocupado = false; }
   };
-  btn.addEventListener('click', intentar);
-  overlay.querySelector('.lock-reset').addEventListener('click', () => {
+  // Tocar en cualquier parte abre Face ID directo (si lo pide la app sola, iOS agrega un paso extra de "Usar llave").
+  overlay.addEventListener('click', (e) => { if (!e.target.closest('.lock-reset')) intentar(); });
+  overlay.querySelector('.lock-reset').addEventListener('click', (e) => {
+    e.stopPropagation();
     if (confirm('Si Face ID no funciona, podés quitar el bloqueo desconectando este aparato: se borran el token y los datos guardados aquí (lo de GitHub no se toca) y tenés que volver a pegar el token. ¿Continuar?')) {
       lock.desactivar(); ocultar(); onReset && onReset();
     }
   });
-  // iOS a veces deja pedir Face ID sin tocar nada; si no, queda el botón.
-  setTimeout(intentar, 250);
 }
 
 function ocultar() {
