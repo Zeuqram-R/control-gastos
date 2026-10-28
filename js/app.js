@@ -18,7 +18,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.14';
+const APP_VERSION = '5.15';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -68,8 +68,13 @@ function openProduct(clave) { productoActual = clave; go('producto'); }
 let back = 'resumen';
 // Al regresar de una página de detalle (o de Ajustes/Historial) se vuelve a donde estabas en la página.
 const scrolls = {};
+// Al entrar a una página de detalle se guarda la página de donde venías ya dibujada,
+// así al deslizar para regresar se ve al instante debajo (sin volver a calcular todo).
+let guardada = null; // { page, nodos, scroll }
 function go(p) {
   const volviendo = SUB.has(page) && !SUB.has(p) && p === back;
+  if (SUB.has(p) && !SUB.has(page) && page !== 'setup') guardada = { page, nodos: [...$('#main').childNodes], scroll: window.scrollY };
+  else if (!SUB.has(p)) guardada = null;
   if (!SUB.has(page)) scrolls[page] = window.scrollY;
   if (SUB.has(p) && !SUB.has(page) && page !== 'setup') back = page;
   page = p;
@@ -613,66 +618,101 @@ function diagText() {
 
 // Jalar hacia abajo para actualizar.
 // Deslizar desde el borde izquierdo hacia adentro = botón "<" (solo en las páginas que tienen regresar).
-// Como pasar página en Books: la página actual se vuelve una tarjeta que se va con el dedo,
-// y la anterior ya está dibujada debajo (así no queda la pantalla en negro mientras carga).
+// Como pasar página en Books: la página actual es una tarjeta que se va con el dedo y la anterior
+// ya está debajo, tal como la dejaste (se guardó al entrar), así no hay que esperar a que se dibuje.
 function setupSwipeBack() {
   const EDGE = 28;
-  let x0 = null, y0 = 0, dx = 0, activo = false, t0 = 0, card = null, desde = null, scrollDesde = 0;
-  const armarTarjeta = () => {
-    const top = $('.topbar'), main = $('#main');
-    card = document.createElement('div');
-    card.className = 'swipe-card';
-    const tb = top.cloneNode(true);
+  let g = null; // gesto en curso: { x0, y0, t0, dx, activo, card, under, nodos, ultimo }
+  const capa = (cls, titulo, nodos, scroll, conBack) => {
+    const el = document.createElement('div');
+    el.className = cls;
+    const tb = $('.topbar').cloneNode(true);
+    for (const x of tb.querySelectorAll('[id]')) x.removeAttribute('id');
+    const t = tb.querySelector('h1'); if (t) t.textContent = titulo;
+    const bb = tb.querySelector('.back-btn'); if (bb) bb.hidden = !conBack;
     const body = document.createElement('div');
     body.className = 'swipe-body';
-    const mc = main.cloneNode(true);
-    mc.style.marginTop = `${-window.scrollY}px`;
-    mc.style.transform = '';
-    body.append(mc);
-    card.append(tb, body);
-    for (const el of card.querySelectorAll('[id]')) el.removeAttribute('id');
-    document.body.append(card);
-    desde = page; scrollDesde = window.scrollY;
-    // La página anterior se dibuja debajo mientras el dedo arrastra la tarjeta.
-    requestAnimationFrame(() => go(back));
+    const m = document.createElement('main');
+    m.style.marginTop = `${-scroll}px`;
+    m.append(...nodos);
+    body.append(m);
+    el.append(tb, body);
+    return el;
   };
-  const quitar = () => { card?.remove(); card = null; };
+  const limpiar = () => {
+    if (!g) return;
+    clearTimeout(g.reloj);
+    g.card?.remove(); g.under?.remove();
+    // Si se canceló, los nodos de la página guardada vuelven a quedar guardados (fuera de la pantalla).
+    if (g.nodos && guardada) guardada.nodos = g.nodos;
+    g = null;
+  };
+  const empezar = () => {
+    const main = $('#main');
+    const titulo = $('#page-title').textContent;
+    // Debajo: la página anterior tal como estaba (o, si no hay guardada, se dibuja de nuevo).
+    if (guardada && guardada.page === back) {
+      g.nodos = guardada.nodos;
+      g.under = capa('swipe-under', TITLES[back] || '', g.nodos, guardada.scroll, false);
+    } else {
+      g.under = capa('swipe-under', TITLES[back] || '', [], 0, false);
+    }
+    // Encima: la página actual (una copia), que se va con el dedo.
+    g.card = capa('swipe-card', titulo, [...main.childNodes].map((n) => n.cloneNode(true)), window.scrollY, true);
+    for (const x of g.card.querySelectorAll('[id]')) x.removeAttribute('id');
+    document.body.append(g.under, g.card);
+  };
+  const terminar = (confirmar) => {
+    if (!g || g.terminando) return;
+    g.terminando = true;
+    const card = g.card;
+    if (!card) { limpiar(); return; }
+    card.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1)';
+    card.style.transform = confirmar ? `translateX(${innerWidth + 30}px)` : 'translateX(0)';
+    setTimeout(() => {
+      if (confirmar) {
+        // Ya regresaste: se dibuja la página de verdad (por si algo cambió) y se quitan las capas.
+        const sc = guardada && guardada.page === back ? guardada.scroll : null;
+        if (g.nodos) { $('#main').replaceChildren(...g.nodos); g.nodos = null; }
+        try { go(back); } catch (e) { console.error(e); }
+        if (sc != null) window.scrollTo({ top: sc });
+      }
+      limpiar();
+    }, 230);
+  };
   addEventListener('touchstart', (e) => {
-    x0 = null;
-    if (card || !SUB.has(page) || !sync.config || e.touches.length !== 1 || document.querySelector('.sheet-bg, .viewer, .lockscreen')) return;
+    if (g) { if (g.activo) terminar(g.dx >= innerWidth * 0.3); else g = null; return; }
+    if (!SUB.has(page) || !sync.config || e.touches.length !== 1 || document.querySelector('.sheet-bg, .viewer, .lockscreen')) return;
     const t = e.touches[0];
     if (t.clientX > EDGE) return;
-    x0 = t.clientX; y0 = t.clientY; dx = 0; activo = false; t0 = Date.now();
-  }, { passive: true });
+    g = { x0: t.clientX, y0: t.clientY, t0: Date.now(), dx: 0, activo: false };
+  }, { passive: true, capture: true });
   addEventListener('touchmove', (e) => {
-    if (x0 == null) return;
+    if (!g || g.terminando) return;
     const t = e.touches[0];
-    const d = t.clientX - x0, dy = Math.abs(t.clientY - y0);
-    if (!activo && (d < 8 || dy > d)) { if (dy > 12 || d < -4) x0 = null; return; }
-    if (e.cancelable) e.preventDefault();
-    if (!activo) { activo = true; armarTarjeta(); }
-    dx = Math.max(0, d);
-    card.style.transition = 'none';
-    card.style.transform = `translateX(${dx}px)`;
-  }, { passive: false });
-  const soltar = () => {
-    if (x0 == null || !activo || !card) { x0 = null; return; }
-    x0 = null;
-    const c = card;
-    const rapido = dx > 40 && Date.now() - t0 < 250;
-    if (dx >= innerWidth * 0.3 || rapido) {
-      c.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1)';
-      c.style.transform = `translateX(${innerWidth + 24}px)`;
-      setTimeout(quitar, 230);
-    } else {
-      // Se arrepintió: la tarjeta vuelve y se queda en la misma página.
-      c.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1)';
-      c.style.transform = 'translateX(0)';
-      setTimeout(() => { go(desde); window.scrollTo({ top: scrollDesde }); quitar(); }, 230);
+    const d = t.clientX - g.x0, dy = Math.abs(t.clientY - g.y0);
+    if (!g.activo) {
+      if (dy > 12 || d < -4) { g = null; return; }
+      if (d < 8 || dy > d) return;
+      g.activo = true;
+      try { empezar(); } catch (er) { console.error(er); limpiar(); return; }
     }
+    if (e.cancelable) e.preventDefault();
+    g.dx = Math.max(0, d);
+    g.card.style.transition = 'none';
+    g.card.style.transform = `translateX(${g.dx}px)`;
+    // Seguro: si por alguna razón no llega el "soltar", se termina solo.
+    clearTimeout(g.reloj);
+    g.reloj = setTimeout(() => terminar(g && g.dx >= innerWidth * 0.3), 1500);
+  }, { passive: false, capture: true });
+  const soltar = () => {
+    if (!g) return;
+    if (!g.activo) { g = null; return; }
+    terminar(g.dx >= innerWidth * 0.3 || (g.dx > 40 && Date.now() - g.t0 < 250));
   };
-  addEventListener('touchend', soltar);
-  addEventListener('touchcancel', soltar);
+  addEventListener('touchend', soltar, { capture: true });
+  addEventListener('touchcancel', soltar, { capture: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && g) { limpiar(); } });
 }
 
 function setupPullToRefresh() {
