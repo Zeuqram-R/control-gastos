@@ -9,7 +9,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.0';
+const APP_VERSION = '5.1';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -57,13 +57,17 @@ function openCategoria(cat) { catActual = cat; go('categoria'); }
 let productoActual = null;
 function openProduct(clave) { productoActual = clave; go('producto'); }
 let back = 'resumen';
+// Al regresar de una página de detalle (o de Ajustes/Historial) se vuelve a donde estabas en la página.
+const scrolls = {};
 function go(p) {
+  const volviendo = SUB.has(page) && !SUB.has(p) && p === back;
+  if (!SUB.has(page)) scrolls[page] = window.scrollY;
   if (SUB.has(p) && !SUB.has(page) && page !== 'setup') back = page;
   page = p;
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === p));
   if (p !== 'setup') history.replaceState(null, '', '#' + p + (p === 'producto' && productoActual ? `/${productoActual}` : p === 'categoria' && catActual ? `/${encodeURIComponent(catActual)}` : ''));
-  window.scrollTo({ top: 0 });
   render();
+  window.scrollTo({ top: volviendo ? (scrolls[p] || 0) : 0 });
 }
 for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => go(t.dataset.page));
 // Ajustes e Historial se abren encima de la página donde estabas; la flecha o el mismo botón te regresan.

@@ -10,7 +10,7 @@ let openCat = null;
 export function viewResumen(ctx) {
   const { sync } = ctx;
   openCat = ctx.openCategoria;
-  const D = Object.fromEntries(['gastos', 'cuentas', 'compras', 'productos', 'eventos', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas']
+  const D = Object.fromEntries(['gastos', 'cuentas', 'compras', 'productos', 'eventos', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas', 'abonos']
     .map((k) => [k, sync.data(k)]));
   const hoy = todayCR();
   const B = C.balanceQuincena(D, hoy);
@@ -18,7 +18,7 @@ export function viewResumen(ctx) {
 
   return [
     h('nav', { class: 'chips', 'aria-label': 'Ir a' },
-      [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Gastos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
+      [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Movimientos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
         .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(`r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
     secFacturas(ctx),
     secQuincena(D, B, hoy),
@@ -26,7 +26,7 @@ export function viewResumen(ctx) {
     secTipos(D, B, hoy),
     secMes(D),
     secVencimientos(ctx, cat, D.eventos, hoy),
-    secGastos(D.gastos),
+    secGastos(C.movimientos(D)),
     secSuper(D),
     secIva(D),
     secCompras(ctx, D),
@@ -67,10 +67,9 @@ const crc2 = (v) => '₡' + Number(v).toLocaleString('en-US', { minimumFractionD
 
 function genCard(D, B, catName, hoy, compact) {
   const { q } = B;
-  const gs = D.gastos.filter((g) => (catName === 'General' || g.categoria === catName));
+  const gs = C.movimientos(D).filter((g) => (catName === 'General' || g.categoria === catName));
   const qs = C.quincenas(gs, D.presupuestos).filter((r) => r.categoria === catName);
-  let cur = qs.find((r) => r.inicio === q.inicio) || { gastado: 0, salario: 0, wink: 0, n: 0 };
-  if (catName === 'General' && B.tachado) cur = { ...cur, gastado: cur.gastado + B.tachado, salario: cur.salario + B.tachado };
+  const cur = qs.find((r) => r.inicio === q.inicio) || { gastado: 0, salario: 0, wink: 0, n: 0 };
   const presu = C.presupuestoVigente(D.presupuestos, catName, q.inicio);
   const pasadas = qs.filter((r) => r.inicio < q.inicio);
   const prom = pasadas.length ? C.sum(pasadas, (r) => r.gastado) / pasadas.length : null;
@@ -83,7 +82,7 @@ function genCard(D, B, catName, hoy, compact) {
     compact ? h('h3', {}, h('span', {}, catName, h('span', { class: 'chev' }, ' ›')), C.CAT_SUB[catName] ? h('span', { class: 'muted' }, C.CAT_SUB[catName]) : null)
       : h('h3', {}, h('span', {}, 'Gasto de la quincena', h('span', { class: 'chev' }, ' ›'))),
     h('div', { class: 'qgrid' + (compact ? ' two' : '') },
-      stat('Gastado', crc(cur.gastado), `${cur.n} gasto(s) · ${fuente}`),
+      stat('Gastado', crc(cur.gastado), `${cur.n} movimiento(s) · ${fuente}`),
       stat('Presupuesto', presu ? crc(presu) : 'Sin definir', presu ? (presu - cur.gastado >= 0 ? `Quedan ${crc(presu - cur.gastado)}` : `Pasado por ${crc(cur.gastado - presu)}`) : (prom ? `Promedio: ${crc(prom)}` : 'Con 2 quincenas te sugiero uno')),
       stat('Ritmo por día', crc(ritmo), presu && quedan > 0 ? `Para no pasarse: ${crc(Math.max(presu - cur.gastado, 0) / quedan)}/día` : `${quedan} día(s) restantes`),
       stat('Al cierre, a este ritmo', crc(proy), compact ? 'Estimado' : 'Estimado. Al inicio de quincena sale alto porque los gastos grandes van primero.', presu ? (proy > presu ? 'var(--bad)' : 'var(--ok)') : null)),
@@ -99,9 +98,10 @@ function genCard(D, B, catName, hoy, compact) {
 
 function secTipos(D, B, hoy) {
   const { q } = B;
-  const extras = [...new Set(D.gastos.map((g) => g.categoria))].filter((c) => c && !C.CATS.includes(c));
+  const movs = C.movimientos(D);
+  const extras = [...new Set(movs.map((g) => g.categoria))].filter((c) => c && !C.CATS.includes(c));
   const todas = [...C.CATS, ...extras];
-  const conAlgo = todas.filter((c) => D.gastos.some((g) => g.categoria === c && g.fecha >= q.inicio && g.fecha <= q.fin) || C.presupuestoVigente(D.presupuestos, c, q.inicio));
+  const conAlgo = todas.filter((c) => movs.some((g) => g.categoria === c && g.fecha >= q.inicio && g.fecha <= q.fin) || C.presupuestoVigente(D.presupuestos, c, q.inicio));
   const resto = todas.filter((c) => !conAlgo.includes(c));
   return h('section', { id: 'r-tipos', class: 'sec' },
     h('div', { class: 'sec-head' }, h('h2', {}, 'Por tipo de gasto')),
@@ -110,15 +110,16 @@ function secTipos(D, B, hoy) {
 }
 
 function secMes(D) {
-  const r = C.resumenMes(D.gastos);
+  const r = C.resumenMes(C.movimientos(D));
   const label = r.mes ? `${MESES[Number(r.mes.slice(5, 7)) - 1]} ${r.mes.slice(0, 4)}` : 'el mes';
   return h('section', { id: 'r-mes', class: 'sec' },
-    h('div', { class: 'sec-head' }, h('h2', {}, `Mes de ${label}`), h('p', { class: 'note' }, `${r.n} gasto(s)${r.n_pend ? ` · ${r.n_pend} sin clasificar` : ''}.`)),
+    h('div', { class: 'sec-head' }, h('h2', {}, `Mes de ${label}`), h('p', { class: 'note' }, `${r.n} movimiento(s)${r.n_pend ? ` · ${r.n_pend} sin clasificar` : ''}.`)),
     h('div', { class: 'tiles' },
       tile('Total del mes', crc(r.total)),
       tile('Fijo', crc(r.fijo), 'Suscripciones, servicios'),
       tile('Variable', crc(r.variable), 'Mercado y similares'),
       tile('De una vez', crc(r.una_vez)),
+      r.deudas ? tile('Deudas pagadas', crc(r.deudas), 'Pagos y abonos a deudas') : null,
       r.pendiente ? tile('Sin clasificar', crc(r.pendiente)) : null));
 }
 
@@ -140,16 +141,16 @@ function secVencimientos(ctx, cat, eventos, hoy) {
     all.length > v.length ? more(all.length - v.length, 'todoVenc', ctx.rerender) : null);
 }
 
-function secGastos(gastos) {
-  const rows = gastos.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+function secGastos(movs) {
+  const TIPO = { rec: 'Recurrente', deuda: 'Deuda', abono: 'Abono' };
   return h('section', { id: 'r-gastos', class: 'card sec' },
-    h('h2', {}, 'Gastos'),
-    h('p', { class: 'note' }, 'Cada gasto registrado, el más reciente primero.'),
-    rows.length ? h('ul', { class: 'rows' }, rows.map((g) => h('li', {},
-      h('div', { class: 'main' }, g.comercio,
-        h('span', { class: 'sub' }, [dayShort(g.fecha), g.descripcion, g.categoria + (g.subcategoria ? ` · ${g.subcategoria}` : ''), g.fuente].filter(Boolean).join(' · ')),
-        g.tipo ? h('span', { class: `pill ${g.tipo === 'Pendiente' ? 'pend' : g.tipo === 'Fijo' ? 'rec' : ''}` }, g.tipo) : null),
-      h('span', { class: 'amt' }, crc(g.monto))))) : empty('Todavía no hay gastos.'));
+    h('h2', {}, 'Movimientos'),
+    h('p', { class: 'note' }, 'Gastos, pagos recurrentes tachados, deudas pagadas y abonos, el más reciente primero.'),
+    movs.length ? h('ul', { class: 'rows' }, movs.map((g) => h('li', {},
+      h('div', { class: 'main' }, g.titulo,
+        h('span', { class: 'sub' }, [dayShort(g.fecha), g.sub, g.categoria, g.fuente].filter(Boolean).join(' · ')),
+        g.tipo === 'gasto' ? (g.gtipo ? h('span', { class: `pill ${g.gtipo === 'Pendiente' ? 'pend' : g.gtipo === 'Fijo' ? 'rec' : ''}` }, g.gtipo) : null) : h('span', { class: `pill ${g.tipo === 'rec' ? 'rec' : 'pend'}` }, TIPO[g.tipo])),
+      h('span', { class: 'amt' }, crc(g.monto))))) : empty('Todavía no hay movimientos.'));
 }
 
 function secSuper(D) {
@@ -260,47 +261,31 @@ function secCuentas(ctx, D, B, hoy) {
 // ---------- Detalle de una categoría (lo que suma esa cajita) ----------
 export function viewCategoria(ctx) {
   const { sync, cat, openProduct } = ctx;
-  const D = Object.fromEntries(['gastos', 'cuentas', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas'].map((k) => [k, sync.data(k)]));
+  const D = Object.fromEntries(['gastos', 'cuentas', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas', 'abonos'].map((k) => [k, sync.data(k)]));
   const hoy = todayCR();
   const B = C.balanceQuincena(D, hoy);
   const { q } = B;
   const general = cat === 'General';
-  const delCat = D.gastos.filter((g) => general || g.categoria === cat);
-  const enQ = delCat.filter((g) => g.fecha >= q.inicio && g.fecha <= q.fin).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  const items = enQ.map((g) => ({ fecha: g.fecha, titulo: g.comercio, sub: [g.descripcion, general ? g.categoria : g.subcategoria, g.fuente].filter(Boolean).join(' · '), monto: g.monto, tipo: 'gasto' }));
-  if (general) {
-    const tc = C.ultimoTC(D.tipo_cambio);
-    const deCuenta = new Set(D.cuentas.map((c) => c.fuente));
-    const recs = new Map(D.recurrentes.map((r) => [r.id, r]));
-    for (const p of D.pagos_recurrentes.filter((x) => x.vence >= q.inicio && x.vence <= q.fin && !deCuenta.has(x.fuente))) {
-      const r = recs.get(p.recurrente || p.id.split('_')[0]) || {};
-      items.push({ fecha: p.fecha, titulo: r.nombre || 'Pago recurrente', sub: `Pago tachado (vence ${dayShort(p.vence)})${p.fuente ? ` · ${p.fuente}` : ''}`, monto: p.monto_crc, tipo: 'rec' });
-    }
-    const deudas = C.deudasCRC(D.deudas, tc);
-    for (const p of D.pagos_deudas.filter((x) => x.fecha >= q.inicio && x.fecha <= q.fin)) {
-      const d = deudas.find((x) => x.id === p.id);
-      if (!d || d.direccion !== 'debemos') continue;
-      items.push({ fecha: p.fecha, titulo: `${d.persona} · ${d.concepto}`, sub: `Deuda pagada${p.fuente ? ` · ${p.fuente}` : ''}`, monto: d.crc, tipo: 'deuda' });
-    }
-    items.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  }
+  const delCat = C.movimientos(D).filter((m) => general || m.categoria === cat);
+  const items = delCat.filter((m) => m.fecha >= q.inicio && m.fecha <= q.fin)
+    .map((m) => ({ ...m, sub: [m.sub, general ? m.categoria : null, m.fuente].filter(Boolean).join(' · ') }));
   const total = C.sum(items, (i) => i.monto);
   const pasadas = [...C.groupBy(delCat.filter((g) => g.fecha < q.inicio), (g) => C.quincenaDe(g.fecha).inicio)].sort((a, b) => b[0].localeCompare(a[0]));
-  const TIPO = { gasto: null, rec: 'Recurrente', deuda: 'Deuda' };
+  const TIPO = { gasto: null, rec: 'Recurrente', deuda: 'Deuda', abono: 'Abono' };
   const row = (i) => h('li', {},
-    h('div', { class: 'main' }, i.titulo, h('span', { class: 'sub' }, `${dayShort(i.fecha)}${i.sub ? ` · ${i.sub}` : ''}`), TIPO[i.tipo] ? h('span', { class: `pill ${i.tipo === 'deuda' ? 'pend' : 'rec'}` }, TIPO[i.tipo]) : null),
+    h('div', { class: 'main' }, i.titulo, h('span', { class: 'sub' }, `${dayShort(i.fecha)}${i.sub ? ` · ${i.sub}` : ''}`), TIPO[i.tipo] ? h('span', { class: `pill ${i.tipo === 'rec' ? 'rec' : 'pend'}` }, TIPO[i.tipo]) : null),
     h('span', { class: 'amt' }, crc(i.monto)));
   return [
     h('section', { class: 'card' },
       h('h2', {}, general ? 'Todo lo de la quincena' : cat),
-      h('p', { class: 'note' }, `Quincena del ${dayShort(q.inicio)} al ${dayShort(q.fin)} · ${items.length} movimiento(s)${general ? ' (gastos, pagos recurrentes tachados y deudas pagadas)' : ''}.`),
+      h('p', { class: 'note' }, `Quincena del ${dayShort(q.inicio)} al ${dayShort(q.fin)} · ${items.length} movimiento(s)${general ? ' (gastos, pagos recurrentes, deudas pagadas y abonos)' : ''}.`),
       h('div', { class: 'cat-total' }, h('span', {}, 'Total'), h('b', {}, crc(total))),
       items.length ? h('ul', { class: 'rows' }, items.map(row)) : empty('Nada en esta quincena.')),
     pasadas.length ? h('section', { class: 'card' },
       h('h2', {}, 'Quincenas anteriores'),
       pasadas.map(([ini, gs]) => h('details', { class: 'pp' },
         h('summary', {}, `${dayShort(ini)} – ${dayShort(C.quincenaDe(ini).fin)} · ${crc(C.sum(gs, (g) => g.monto))}`),
-        h('ul', { class: 'rows' }, gs.map((g) => row({ fecha: g.fecha, titulo: g.comercio, sub: [g.descripcion, g.fuente].filter(Boolean).join(' · '), monto: g.monto, tipo: 'gasto' })))))) : null,
+        h('ul', { class: 'rows' }, gs.map((g) => row({ ...g, sub: [g.sub, g.fuente].filter(Boolean).join(' · ') })))))) : null,
   ];
 }
 

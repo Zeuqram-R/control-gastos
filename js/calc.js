@@ -1,5 +1,5 @@
 // Cálculos del control (sin interfaz). Reciben los datos tal como están en el repo.
-import { addDays, daysBetween } from './ui.js';
+import { addDays, daysBetween, dayShort } from './ui.js';
 
 const sum = (arr, f = (x) => x) => arr.reduce((s, x) => s + (Number(f(x)) || 0), 0);
 const mean = (arr) => (arr.length ? sum(arr) / arr.length : null);
@@ -23,11 +23,11 @@ export function ultimoTC(tipoCambio) {
   return tipoCambio.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).pop() || null;
 }
 
-export function resumenMes(gastos) {
-  const mes = gastos.map((g) => d10(g.fecha).slice(0, 7)).sort().pop() || '';
-  const delMes = gastos.filter((g) => d10(g.fecha).slice(0, 7) === mes);
-  const s = (t) => sum(delMes.filter((g) => !t || g.tipo === t), (g) => g.monto);
-  return { mes, total: s(), fijo: s('Fijo'), variable: s('Variable'), una_vez: s('Una vez'), pendiente: s('Pendiente'), n: delMes.length, n_pend: delMes.filter((g) => g.tipo === 'Pendiente').length };
+export function resumenMes(movs) {
+  const mes = movs.map((g) => d10(g.fecha).slice(0, 7)).sort().pop() || '';
+  const delMes = movs.filter((g) => d10(g.fecha).slice(0, 7) === mes);
+  const s = (t) => sum(delMes.filter((g) => !t || (g.gtipo || g.tipo) === t), (g) => g.monto);
+  return { mes, total: s(), fijo: s('Fijo'), variable: s('Variable'), una_vez: s('Una vez'), deudas: s('Deudas'), pendiente: s('Pendiente'), n: delMes.length, n_pend: delMes.filter((g) => (g.gtipo || g.tipo) === 'Pendiente').length };
 }
 
 export function quincenas(gastos, presupuestos) {
@@ -118,17 +118,59 @@ export function fechasEntre(f, desde, hasta) {
   return out;
 }
 
-// Deudas atadas a un préstamo en cuotas: lo que falta = cuota × cuotas sin pagar.
-export function ajustarPrestamos(deudas, recurrentes, pagosRec) {
+// Lo que falta de cada deuda: préstamos en cuotas (cuota × cuotas sin pagar) y abonos parciales.
+export function saldoDeudas(deudas, recurrentes, pagosRec, abonos = []) {
   const pag = new Set(pagosRec.map((p) => p.id));
   return deudas.map((d) => {
-    if (!d.recurrente) return d;
-    const f = recurrentes.find((r) => r.id === d.recurrente);
-    if (!f || !f.desde || !f.hasta) return d;
-    const fechas = fechasEntre({ ...f, estado: 'activo' }, d10(f.desde), d10(f.hasta));
-    const faltan = fechas.filter((x) => !pag.has(`${f.id}_${x}`)).length;
-    return { ...d, monto: faltan * Number(f.monto), cuotas_total: fechas.length, cuotas_faltan: faltan };
+    let out = { ...d, monto_original: Number(d.monto) || 0 };
+    if (d.recurrente) {
+      const f = recurrentes.find((r) => r.id === d.recurrente);
+      if (f && f.desde && f.hasta) {
+        const fechas = fechasEntre({ ...f, estado: 'activo' }, d10(f.desde), d10(f.hasta));
+        const faltan = fechas.filter((x) => !pag.has(`${f.id}_${x}`)).length;
+        out = { ...out, monto: faltan * Number(f.monto), cuotas_total: fechas.length, cuotas_faltan: faltan };
+      }
+    }
+    const ab = abonos.filter((a) => a.deuda === d.id);
+    if (ab.length) {
+      const abonado = sum(ab, (a) => a.monto);
+      out = { ...out, abonado, abonos: ab, monto: Math.max(0, Math.round((Number(out.monto) - abonado) * 100) / 100) };
+    }
+    return out;
   });
+}
+export const ajustarPrestamos = (deudas, recurrentes, pagosRec, abonos) => saldoDeudas(deudas, recurrentes, pagosRec, abonos);
+
+// Todo lo que salió de plata (gastos, pagos recurrentes tachados, deudas pagadas y abonos), con su categoría.
+// Lo que sale de una cuenta aparte (p. ej. Bank of America) no se cuenta aquí.
+export function movimientos(D) {
+  const tc = ultimoTC(D.tipo_cambio);
+  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente));
+  const recs = new Map(D.recurrentes.map((r) => [r.id, r]));
+  const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc);
+  const venta = tc ? Number(tc.venta) : 0;
+  const out = [];
+  for (const g of D.gastos) {
+    if (deCuenta.has(g.fuente)) continue;
+    out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.categoria || 'Sin categoría', monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [g.descripcion, g.subcategoria].filter(Boolean).join(' · '), tipo: 'gasto', gtipo: g.tipo });
+  }
+  for (const p of D.pagos_recurrentes) {
+    if (deCuenta.has(p.fuente)) continue;
+    const r = recs.get(p.recurrente || p.id.split('_')[0]) || {};
+    out.push({ id: `pr:${p.id}`, fecha: d10(p.fecha), categoria: r.categoria || 'Suscripciones y pagos recurrentes', monto: Number(p.monto_crc) || 0, fuente: p.fuente, titulo: r.nombre || 'Pago recurrente', sub: `Pago tachado · vence ${dayShort(p.vence)}`, tipo: 'rec', gtipo: 'Fijo' });
+  }
+  const crcDe = (d, m) => (d.moneda === 'USD' ? Math.round(m * venta) : m);
+  for (const p of D.pagos_deudas) {
+    const d = deudas.find((x) => x.id === p.id);
+    if (!d || d.direccion !== 'debemos' || deCuenta.has(p.fuente)) continue;
+    out.push({ id: `pd:${p.id}`, fecha: d10(p.fecha), categoria: d.categoria || 'Deudas', monto: crcDe(d, Number(d.monto)), fuente: p.fuente, titulo: `${d.persona} · ${d.concepto}`, sub: 'Deuda pagada', tipo: 'deuda', gtipo: 'Deudas' });
+  }
+  for (const a of D.abonos || []) {
+    const d = deudas.find((x) => x.id === a.deuda);
+    if (!d || d.direccion !== 'debemos' || deCuenta.has(a.fuente)) continue;
+    out.push({ id: `ab:${a.id}`, fecha: d10(a.fecha), categoria: d.categoria || 'Deudas', monto: crcDe(d, Number(a.monto)), fuente: a.fuente, titulo: `${d.persona} · abono`, sub: d.concepto, tipo: 'abono', gtipo: 'Deudas' });
+  }
+  return out.sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
 
 // Cuentas bancarias: saldo, cobros que vienen (30 días) y cómo quedaría.
@@ -172,14 +214,12 @@ export function balanceQuincena(D, hoy) {
   const activos = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado) && !deCuenta.has(f.fuente));
   const porPagar = activos.map((f) => ({ ...f, prox: proximoPago(f, hoy) }))
     .filter((f) => f.prox && f.prox <= q.fin && !pagRec.has(`${f.id}_${f.prox}`) && aplica(f, D.cuentas || []));
-  const deudas = deudasCRC(ajustarPrestamos(D.deudas, D.recurrentes, D.pagos_recurrentes), tc);
+  const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc);
   const deudasQ = deudas.filter((d) => !pagDeu.has(d.id) && d.direccion === 'debemos' && d.fecha_limite && d10(d.fecha_limite) <= q.fin);
-  const tachRec = [...pagRec.values()].filter((r) => r.vence && r.vence >= q.inicio && r.vence <= q.fin && !deCuenta.has(r.fuente));
-  const tachDeu = deudas.filter((d) => d.direccion === 'debemos' && pagDeu.has(d.id) && d10(pagDeu.get(d.id).fecha) >= q.inicio && d10(pagDeu.get(d.id).fecha) <= q.fin);
-  const tachado = sum(tachRec, (r) => r.monto_crc) + sum(tachDeu, (d) => d.crc);
-  const gs = D.gastos.filter((g) => d10(g.fecha) >= q.inicio && d10(g.fecha) <= q.fin);
-  const wink = sum(gs.filter((g) => g.fuente === 'Wink'), (g) => g.monto);
-  const gastado = sum(gs, (g) => g.monto) + tachado;
+  const movs = movimientos(D).filter((m) => m.fecha >= q.inicio && m.fecha <= q.fin);
+  const tachado = sum(movs.filter((m) => m.tipo !== 'gasto'), (m) => m.monto);
+  const wink = sum(movs.filter((m) => m.fuente === 'Wink'), (m) => m.monto);
+  const gastado = sum(movs, (m) => m.monto);
   const fijos = sum(porPagar, (f) => f.monto_crc), deu = sum(deudasQ, (d) => d.crc);
   return {
     q, tc, ing, neto, bruto, saldos, saldo, porPagar, deudasQ, fijos, deu, tachado, gastado, wink,

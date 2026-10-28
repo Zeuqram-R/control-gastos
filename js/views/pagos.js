@@ -29,7 +29,8 @@ function base(sync) {
   return {
     tc,
     rec: C.recurrentesCRC(sync.data('recurrentes'), tc),
-    deudas: C.deudasCRC(C.ajustarPrestamos(sync.data('deudas'), sync.data('recurrentes'), sync.data('pagos_recurrentes')), tc),
+    deudas: C.deudasCRC(C.saldoDeudas(sync.data('deudas'), sync.data('recurrentes'), sync.data('pagos_recurrentes'), sync.data('abonos')), tc),
+    abonos: sync.data('abonos'),
     cuentas: sync.data('cuentas'),
     pagRec: new Map(sync.data('pagos_recurrentes').map((p) => [p.id, p])),
     pagDeu: new Map(sync.data('pagos_deudas').map((p) => [p.id, p])),
@@ -203,7 +204,7 @@ function otros(B) {
 }
 
 // ---------- Deudas ----------
-const dstate = { filtro: null, abiertos: new Set(), form: false };
+const dstate = { filtro: null, abiertos: new Set(), form: false, abonando: null, abono: '' };
 
 export function viewDeudas(ctx) {
   const { sync, rerender, toast } = ctx;
@@ -226,6 +227,28 @@ export function viewDeudas(ctx) {
   const grupos = [...C.groupBy(lista, (d) => `${d.persona}|${d.direccion}`)]
     .sort((a, b) => (a[1][0].direccion === 'debemos' ? 0 : 1) - (b[1][0].direccion === 'debemos' ? 0 : 1) || sumC(b[1]) - sumC(a[1]));
 
+  // Abonar (pago parcial) a una deuda; baja lo que falta sin tacharla.
+  const abonoUI = (d) => {
+    if (dstate.abonando !== d.id) {
+      return h('button', { type: 'button', class: 'link-btn abonar', onclick: (e) => { e.stopPropagation(); dstate.abonando = d.id; dstate.abono = ''; rerender(); } }, d.direccion === 'debemos' ? 'Abonar' : 'Registrar abono');
+    }
+    const inp = h('input', { class: 'input', id: `ab-${d.id}`, inputmode: 'decimal', placeholder: d.moneda === 'USD' ? 'Monto en $' : 'Monto en ₡', autocomplete: 'off', oninput: (e) => { dstate.abono = e.target.value; }, onclick: (e) => e.stopPropagation() });
+    inp.value = dstate.abono;
+    const guardar = async (e) => {
+      e?.stopPropagation();
+      const v = Number(String(inp.value).replace(/[^\d.]/g, ''));
+      if (!v) { inp.focus(); return; }
+      dstate.abonando = null; dstate.abono = '';
+      await sync.mutate('abonos', { kind: 'upsert', record: { id: `A${Date.now().toString(36)}`, deuda: d.id, fecha: hoy, monto: v, moneda: d.moneda, fuente: '', por: persona } }, `abono a ${d.persona}: ${d.moneda === 'USD' ? '$' : '₡'}${v}`);
+      toast('Abono anotado.');
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') guardar(e); });
+    return h('div', { class: 'abono-form', onclick: (e) => e.stopPropagation() }, inp,
+      h('button', { type: 'button', class: 'btn sm', onclick: guardar }, 'Guardar'),
+      h('button', { type: 'button', class: 'btn secondary sm', onclick: (e) => { e.stopPropagation(); dstate.abonando = null; rerender(); } }, '✕'));
+  };
+  const abonadoTxt = (d) => (d.abonado ? h('div', { class: 'deuda-nota' }, `Abonado ${d.moneda === 'USD' ? usd(d.abonado) : crc(d.abonado)} (${d.abonos.length} abono${d.abonos.length === 1 ? '' : 's'}) de ${d.moneda === 'USD' ? usd(d.monto_original) : crc(d.monto_original)}`) : null);
+
   const card = ([gk, list]) => {
     const d0 = list[0], multi = list.length > 1, cls = d0.direccion === 'debemos' ? 'debe' : 'nos';
     const abierto = dstate.abiertos.has(gk);
@@ -237,7 +260,9 @@ export function viewDeudas(ctx) {
       return h('div', { class: `deuda ${cls} fija` },
         head,
         h('div', { class: 'deuda-it' }, h('span', {}, `Faltan ${d0.cuotas_faltan} de ${d0.cuotas_total} cuotas`), h('span', {}, crc(d0.crc))),
-        h('div', { class: 'deuda-nota' }, 'Baja sola cuando se marca una cuota como pagada en Recurrentes.'));
+        abonadoTxt(d0),
+        h('div', { class: 'deuda-nota' }, 'Baja sola con cada cuota que se marca pagada en Recurrentes, y con los pagos extra que abonés aquí.'),
+        abonoUI(d0));
     }
     if (!multi) {
       const p = pendOf(`d:${d0.id}`);
@@ -245,7 +270,8 @@ export function viewDeudas(ctx) {
         head,
         h('div', { class: 'deuda-it' }, h('span', {}, d0.concepto + (d0.fecha_limite ? ` · pagar antes del ${dayShort(d0.fecha_limite)}` : '')), h('span', {}, montoTxt(d0))),
         d0.nota ? h('div', { class: 'deuda-nota' }, d0.nota) : null,
-        p ? h('span', { class: 'undo' }, undoTxt(p)) : null);
+        abonadoTxt(d0),
+        p ? h('span', { class: 'undo' }, undoTxt(p)) : abonoUI(d0));
     }
     return h('div', { class: `deuda ${cls}`, role: 'button', onclick: () => { abierto ? dstate.abiertos.delete(gk) : dstate.abiertos.add(gk); rerender(); } },
       head,
@@ -255,7 +281,8 @@ export function viewDeudas(ctx) {
         return h('div', { class: 'deuda-it tachable' + (p ? ' tachado' : ''), onclick: (e) => { e.stopPropagation(); pagar(d); } },
           h('span', {}, d.concepto + (d.fecha_limite ? ` · antes del ${dayShort(d.fecha_limite)}` : '') + (d.de_quien !== d0.de_quien ? ` · ${d.de_quien}` : '')),
           h('span', {}, montoTxt(d)),
-          p ? h('span', { class: 'undo' }, undoTxt(p)) : null);
+          d.abonado ? h('span', { class: 'abono-mini' }, `Abonado ${d.moneda === 'USD' ? usd(d.abonado) : crc(d.abonado)}`) : null,
+          p ? h('span', { class: 'undo' }, undoTxt(p)) : abonoUI(d));
       }) : null);
   };
 
@@ -282,7 +309,16 @@ export function viewDeudas(ctx) {
       grupos.length ? h('div', { class: 'deudas-grid' }, grupos.map(card)) : empty('No hay deudas pendientes aquí.')),
     h('section', { class: 'card' },
       h('h2', {}, 'Pagado'),
-      h('p', { class: 'note' }, 'Deudas que ya se pagaron o que ya nos pagaron, con la fecha en que se tacharon.'),
+      h('p', { class: 'note' }, 'Deudas que ya se pagaron o que ya nos pagaron, y los abonos, con su fecha.'),
+      B.abonos.length ? [h('h3', { class: 'grp-h' }, 'Abonos'), h('ul', { class: 'rows' }, B.abonos.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map((a) => {
+        const d = B.deudas.find((x) => x.id === a.deuda) || {};
+        return h('li', { class: 'pay-row' },
+          h('span', { class: 'bar', style: { background: d.direccion === 'debemos' ? ORANGE : GREEN } }),
+          h('div', { class: 'main' }, `${d.persona || 'Deuda'} · abono`,
+            h('span', { class: 'sub' }, `${d.concepto || ''} · el ${dayShort(a.fecha)}${a.por ? ` · ${a.por}` : ''} · `,
+              h('button', { type: 'button', class: 'link-btn', onclick: () => { sync.mutate('abonos', { kind: 'delete', id: a.id }, `deshace abono a ${d.persona}`); toast('Abono quitado.'); } }, 'Deshacer'))),
+          h('div', { class: 'amt' }, a.moneda === 'USD' ? usd(a.monto) : crc(a.monto)));
+      })), h('h3', { class: 'grp-h' }, 'Deudas pagadas')] : null,
       pagadas.length ? h('ul', { class: 'rows' }, pagadas.map((d) => {
         const pg = B.pagDeu.get(d.id);
         return h('li', { class: 'pay-row' },

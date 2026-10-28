@@ -445,3 +445,9 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .pq-d { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .pq-ops { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; }
 .pq .row-add { margin: 6px 0 0; }
+
+.link-btn.abonar { display: inline-block; margin-top: 8px; font-size: 13.5px; }
+.abono-form { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; margin-top: 8px; flex-basis: 100%; }
+.abono-form .input { height: 36px; font-size: 15px; }
+.abono-mini { flex-basis: 100%; font-size: 12px; color: var(--ok); }
+.deuda-it .link-btn.abonar { flex-basis: 100%; margin-top: 2px; text-align: left; }
