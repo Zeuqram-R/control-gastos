@@ -1,6 +1,6 @@
 // Guarda la app en el dispositivo para que abra sin internet.
 // Los datos no pasan por aquí: viven en IndexedDB y se sincronizan con GitHub desde la app.
-const VERSION = 'v5-2026-10-27d';
+const VERSION = 'v5-2026-10-27e';
 const SHELL = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const SHELL = [
   './js/ui.js',
   './js/prefs.js',
   './js/lock.js',
+  './js/push.js',
   './js/calc.js',
   './js/views/resumen.js',
   './js/views/lista.js',
@@ -56,4 +57,22 @@ self.addEventListener('fetch', (event) => {
       return res;
     }).catch(() => caches.match('./index.html'))),
   );
+});
+
+// Avisos de pagos (llegan desde GitHub Actions).
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (e) { d = { title: 'Control de gastos', body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(d.title || 'Control de gastos', {
+    body: d.body || '', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: d.url || './' }, tag: d.tag || 'pagos',
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || './', self.registration.scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) { if ('focus' in c) { c.navigate ? c.navigate(url) : null; return c.focus(); } }
+    return self.clients.openWindow(url);
+  }));
 });

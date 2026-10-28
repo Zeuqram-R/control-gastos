@@ -4,6 +4,7 @@ import { GitHubError } from './github.js';
 import { $, h, ago, privacy, preloadPhotos } from './ui.js';
 import { prefs } from './prefs.js';
 import { lock, iniciarCandado } from './lock.js';
+import { push } from './push.js';
 let lockDisponible = false;
 import { viewResumen, viewCategoria } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
@@ -11,7 +12,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.3';
+const APP_VERSION = '5.4';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -314,6 +315,22 @@ function viewAjustes() {
         lock.activo ? h('div', { class: 'field', style: { marginTop: '14px', marginBottom: '0' } }, h('label', {}, 'Volver a pedir Face ID después de'),
           seg([['0', 'Al salir'], ['1', '1 min'], ['5', '5 min'], ['30', '30 min']], String(lock.config.espera ?? 1), (k) => { lock.setEspera(Number(k)); render(); })) : null,
       ] : h('p', { class: 'note', style: { margin: 0 } }, 'Este aparato no permite Face ID / Touch ID para apps web (o no está configurado).')),
+
+    h('section', { class: 'card' },
+      h('h2', {}, 'Avisos de pagos'),
+      !push.soportado() || !push.instalada()
+        ? h('p', { class: 'note', style: { margin: 0 } }, push.instalada() ? 'Este aparato no permite avisos para apps web (en iPhone/iPad hace falta iOS 16.4 o más nuevo).' : 'Para recibir avisos, abrí la app desde el ícono de la pantalla de inicio (no desde Safari).')
+        : [
+          sw('aj-push', 'Avisarme de los pagos', 'Todos los días a las 7:35 a. m.: lo que vence hoy, mañana y en 3 días, deudas con fecha, y si a Bank of America no le alcanza. Te llegan los tuyos y los de ambos.', push.activo, async (v) => {
+            try {
+              if (v) { await push.activar(sync); toast('Avisos activados. En unos minutos te llega uno de prueba.'); }
+              else { await push.desactivar(sync); toast('Avisos desactivados en este aparato.'); }
+            } catch (e) {
+              toast(e.message === 'denegado' ? 'iOS tiene los avisos bloqueados para esta app: activalos en Ajustes del iPhone → Notificaciones → Gastos.' : `No se pudieron activar (${e.message}).`);
+            }
+            render();
+          }),
+        ]),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Este dispositivo'),
