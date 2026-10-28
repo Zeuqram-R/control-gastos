@@ -5,7 +5,7 @@ export const ARCHIVOS = [
   ['gastos', 'Gastos'], ['pagos_recurrentes', 'Recurrentes pagados'], ['recurrentes', 'Recurrentes'], ['deudas', 'Deudas'],
   ['pagos_deudas', 'Deudas pagadas'], ['abonos', 'Abonos'], ['cuentas', 'Cuentas'], ['metas', 'Metas'], ['deseos', 'Lista de deseos'], ['negocio', 'Santo Coco ventas'], ['saldos', 'Saldos'],
   ['ingresos', 'Ingresos'], ['presupuestos', 'Presupuestos'], ['compras', 'Compras'], ['productos', 'Productos'],
-  ['eventos', 'Eventos'], ['lista', 'Lista'], ['lugares', 'Lugares'], ['facturas', 'Facturas'], ['tipo_cambio', 'Tipo de cambio'],
+  ['eventos', 'Eventos'], ['lista', 'Lista'], ['lugares', 'Lugares'], ['facturas', 'Facturas'], ['pendientes', 'Preguntas de Claude'], ['notas', 'Notas'], ['tipo_cambio', 'Tipo de cambio'],
 ];
 const PRIMERO = ['id', 'fecha', 'nombre', 'comercio', 'concepto', 'producto', 'categoria', 'monto', 'monto_crc', 'moneda', 'fuente', 'tipo'];
 
@@ -81,6 +81,20 @@ export function bajar(blob, nombre) {
 
 export function respaldar(sync, formato, hoy) {
   const datos = Object.fromEntries(ARCHIVOS.map(([k]) => [k, sync.data(k) || []]));
-  if (formato === 'json') bajar(new Blob([JSON.stringify(datos, null, 1)], { type: 'application/json' }), `control-de-gastos-${hoy}.json`);
-  else bajar(excel(datos), `control-de-gastos-${hoy}.xlsx`);
+  if (formato === 'json') {
+    const meta = { app: 'Control de gastos', fecha: new Date().toISOString(), por: sync.config?.persona, dispositivo: sync.config?.dispositivo };
+    bajar(new Blob([JSON.stringify({ _respaldo: meta, ...datos }, null, 1)], { type: 'application/json' }), `control-de-gastos-${hoy}.json`);
+  } else bajar(excel(datos), `control-de-gastos-${hoy}.xlsx`);
+}
+
+// Lee un respaldo .json y dice qué trae, comparado con lo que hay ahora.
+export async function leerRespaldo(file, sync) {
+  let obj;
+  try { obj = JSON.parse(await file.text()); } catch (e) { throw new Error('Ese archivo no es un respaldo JSON válido.'); }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('Ese archivo no es un respaldo de la app.');
+  const partes = ARCHIVOS.filter(([k]) => Array.isArray(obj[k])).map(([k, t]) => ({ k, t, n: obj[k].length, ahora: (sync.data(k) || []).length, datos: obj[k] }));
+  if (!partes.length) throw new Error('Ese archivo no trae datos de la app (¿es el Excel? Para restaurar se usa la copia JSON).');
+  const malos = partes.filter((p) => p.datos.some((r) => !r || typeof r !== 'object' || r.id == null));
+  if (malos.length) throw new Error(`El respaldo parece dañado (${malos.map((p) => p.t).join(', ')}).`);
+  return { meta: obj._respaldo || null, partes };
 }

@@ -7,6 +7,7 @@ const groupBy = (arr, f) => { const m = new Map(); for (const x of arr) { const 
 const d10 = (s) => String(s || '').slice(0, 10);
 const iso = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
 
+export const WINK = 'WINK';
 export const NEGOCIO = 'Santo Coco';
 export const CAJA_NEGOCIO = 'Caja Santo Coco';
 export const CATS_NEGOCIO = ['Insumos', 'Empaque', 'Transporte', 'Publicidad', 'Equipo', 'Otros'];
@@ -187,6 +188,7 @@ export function movimientos(D) {
   }
   for (const p of D.pagos_recurrentes) {
     if (deCuenta.has(p.fuente) || p.no_cuenta) continue; // no_cuenta: pagado antes de llevar el control
+    if (p.recurrente === WINK) continue; // pagar la tarjeta no es gasto nuevo: lo comprado con Wink ya se contó
     const r = recs.get(p.recurrente || p.id.split('_')[0]) || {};
     out.push({ id: `pr:${p.id}`, fecha: d10(p.fecha), categoria: r.categoria || 'Suscripciones y pagos recurrentes', monto: Number(p.monto_crc) || 0, fuente: p.fuente, titulo: r.nombre || 'Pago recurrente', sub: `Pago tachado · vence ${dayShort(p.vence)}`, tipo: 'rec', gtipo: 'Fijo' });
   }
@@ -257,6 +259,17 @@ export function metasInfo(D, hoy) {
   });
 }
 
+// Tarjeta Wink: lo usado en la quincena anterior se paga en esta. Se tacha como un pago (id WINK_<inicio de esta quincena>).
+export function winkPendiente(D, hoy) {
+  const q = quincenaDe(hoy);
+  const prev = quincenaDe(addDays(q.inicio, -1));
+  const usado = sum(movimientos(D).filter((m) => m.fuente === 'Wink' && m.fecha >= prev.inicio && m.fecha <= prev.fin), (m) => m.monto);
+  if (!usado) return null;
+  const id = `${WINK}_${q.inicio}`;
+  if ((D.pagos_recurrentes || []).some((p) => p.id === id)) return null;
+  return { id: WINK, nombre: `Tarjeta Wink (lo usado del ${dayShort(prev.inicio)} al ${dayShort(prev.fin)})`, prox: q.inicio, monto: usado, moneda: 'CRC', monto_crc: usado, quien: 'Ambos', fuente: 'Salario', categoria: 'Tarjeta Wink', wink: true };
+}
+
 // Primera quincena con datos (desde ahí se arrastra lo que sobra de una quincena a la siguiente).
 function inicioDatos(D) {
   const fechas = [...(D.saldos || []).map((x) => d10(x.fecha)), ...movimientos(D).map((m) => m.fecha)].filter(Boolean).sort();
@@ -277,8 +290,11 @@ function cajaQ(D, q, tc, deCuenta) {
   const gastado = sum(movs, (m) => m.monto);
   const aportes = (D.metas || []).flatMap((m) => (m.aportes || []).filter((x) => x.fecha >= q.inicio && x.fecha <= q.fin && (x.fuente || 'Salario') !== 'Fondo').map((x) => ({ ...x, meta: m.nombre })));
   const apartado = sum(aportes, (x) => Number(x.monto) || 0);
-  return { ing, agui, neto, bruto, saldos, saldo, movs, wink, otraCuenta, gastado, aportes, apartado,
-    neta: neto + saldo - (gastado - wink - otraCuenta) - apartado };
+  // Pagos de la tarjeta Wink hechos en esta quincena (salen de la plata de la quincena).
+  const winkPagos = (D.pagos_recurrentes || []).filter((p) => p.recurrente === WINK && d10(p.fecha) >= q.inicio && d10(p.fecha) <= q.fin);
+  const winkPagado = sum(winkPagos, (p) => Number(p.monto_crc) || 0);
+  return { ing, agui, neto, bruto, saldos, saldo, movs, wink, otraCuenta, gastado, aportes, apartado, winkPagos, winkPagado,
+    neta: neto + saldo - (gastado - wink - otraCuenta) - apartado - winkPagado };
 }
 
 export function balanceQuincena(D, hoy) {
@@ -312,6 +328,8 @@ export function balanceQuincena(D, hoy) {
     }
     porPagar.sort((x, y) => x.prox.localeCompare(y.prox));
   }
+  const wp = winkPendiente(D, hoy);
+  if (wp) porPagar.unshift(wp);
   const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc);
   const deudasQ = deudas.filter((d) => !pagDeu.has(d.id) && d.direccion === 'debemos' && d.fecha_limite && d10(d.fecha_limite) <= q.fin);
   const tachado = sum(K.movs.filter((m) => m.tipo !== 'gasto'), (m) => m.monto);

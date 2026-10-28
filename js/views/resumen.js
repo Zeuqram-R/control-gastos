@@ -23,23 +23,19 @@ export function viewResumen(ctx) {
 
   return [
     h('nav', { class: 'chips', 'aria-label': 'Ir a' },
-      [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['metas', 'Metas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Movimientos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
+      [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['metas', 'Metas'], ['negocio', 'Santo Coco'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['gastos', 'Movimientos']]
         .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(`r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
     secFacturas(ctx),
     ['12', '01'].includes(hoy.slice(5, 7)) ? h('section', { class: 'card fac-quick tap-card sec anio-card', role: 'button', onclick: () => ctx.go('anio') },
       h('div', { class: 'main' }, h('b', {}, `✨ Tu ${hoy.slice(5, 7) === '01' ? Number(hoy.slice(0, 4)) - 1 : hoy.slice(0, 4)}`), h('span', { class: 'sub' }, 'En qué se fue la plata, cuánto ahorraron, lo que más compraron…')),
       h('span', { class: 'chev big' }, '›')) : null,
     state.qOff > 0 ? secProyeccion(ctx, D, hoy) : secQuincena(ctx, D, B, hoy),
-    secCuentas(ctx, D, B, hoy),
+    secCuentasMini(ctx, D, B, hoy),
     secMetas(ctx, D, hoy),
     secNegocio(ctx, hoy),
     secTipos(ctx, D, B, hoy),
     secMes(D),
-    secVencimientos(ctx, cat, D.eventos, hoy),
     secGastos(ctx, C.movimientos(D)),
-    secSuper(D),
-    secIva(D),
-    secCompras(ctx, D),
   ];
 }
 
@@ -272,7 +268,7 @@ function comparativo(movs, nomMes) {
     h('button', { type: 'button', class: 'link-more', onclick: () => irAnio && irAnio() }, `Ver el año completo ›`));
 }
 
-function secVencimientos(ctx, cat, eventos, hoy) {
+export function secVencimientos(ctx, cat, eventos, hoy) {
   const { sync } = ctx;
   const all = C.vencimientos(cat, eventos);
   const v = state.todoVenc ? all : all.slice(0, 6);
@@ -348,7 +344,7 @@ function secGastos(ctx, movs) {
     cuerpo);
 }
 
-function secSuper(D) {
+export function secSuper(D) {
   return h('section', { id: 'r-super', class: 'grid2 sec' },
     h('div', { class: 'card' },
       h('h2', {}, 'Súper por categoría'),
@@ -360,7 +356,7 @@ function secSuper(D) {
       bars(C.porDueno(D.compras, D.productos).map((r) => ({ label: r.dueno, total: r.total })), { color: 'var(--orange)' })));
 }
 
-function secIva(D) {
+export function secIva(D) {
   const r = C.iva(D.compras, D.productos);
   const mes = r.mes ? MESES[Number(r.mes.slice(5, 7)) - 1] : 'el mes';
   return h('section', { id: 'r-iva', class: 'card sec' },
@@ -382,7 +378,7 @@ function secIva(D) {
         h('span', { class: 'amt' }, crc(p.iva)))))));
 }
 
-function secCompras(ctx, D) {
+export function secCompras(ctx, D) {
   const { sync } = ctx;
   const info = new Map(D.productos.map((p) => [p.clave, p]));
   const rows = D.compras.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(a.id).localeCompare(String(b.id)));
@@ -438,13 +434,32 @@ function secNegocio(ctx, hoy) {
     h('span', { class: 'chev big' }, '›'));
 }
 
+// Cuentas en corto (el detalle y "Actualizar saldo" están en Recurrentes).
+function secCuentasMini(ctx, D, B, hoy) {
+  const info = C.cuentasInfo(D, hoy, 35);
+  if (!info.length) return null;
+  const F = C.fondoAhorro(D);
+  return h('section', { id: 'r-cuentas', class: 'sec' },
+    h('div', { class: 'sec-head' }, h('h2', {}, 'Cuentas')),
+    h('div', { class: 'card tap-card', role: 'button', 'aria-label': 'Ver cuentas en Recurrentes', onclick: () => ctx.go('recurrentes') },
+      h('ul', { class: 'rows' }, info.map((c) => {
+        const fmt = (v) => (c.moneda === 'USD' ? usd(v) : crc(v));
+        const malo = c.cobros.find((x) => !x.omitido && x.despues < 0);
+        return h('li', {},
+          h('div', { class: 'main' }, c.nombre, h('span', { class: 'sub', style: { color: malo ? 'var(--bad)' : null } }, malo ? `No alcanza para ${malo.f.nombre} el ${dayShort(malo.fecha)}` : c.cobros.length ? `Después de los cobros de 35 días: ${fmt(c.proyectado)}` : `Actualizado el ${dayShort(c.fecha)}`)),
+          h('span', { class: 'amt', style: { color: c.saldo < 0 ? 'var(--bad)' : null } }, fmt(c.saldo)));
+      })),
+      F.total ? h('p', { class: 'note', style: { margin: '6px 0 0' } }, `Con lo libre de la quincena y el fondo, en total tienen unos ${crc(B.queda + C.sum(info, (c) => c.crc || 0))}.`) : null,
+      h('div', { class: 'tap-more' }, 'Ver en Recurrentes ›')));
+}
+
 // ---------- Cuentas (Bank of America y las que vengan) ----------
-function secCuentas(ctx, D, B, hoy) {
+export function secCuentas(ctx, D, B, hoy) {
   const { sync, toast, rerender } = ctx;
   const info = C.cuentasInfo(D, hoy, 35);
   if (!info.length) return null;
   const totalCRC = C.sum(info, (c) => c.crc);
-  return h('section', { id: 'r-cuentas', class: 'sec' },
+  return h('section', { id: 'rec-cuentas', class: 'sec' },
     h('div', { class: 'sec-head' }, h('h2', {}, 'Cuentas'),
       h('p', { class: 'note' }, `Plata en cuentas aparte del salario de la quincena. Con lo que queda libre de la quincena, en total tienen unos ${crc(B.queda + totalCRC)}.`)),
     info.map((c) => {

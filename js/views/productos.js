@@ -1,6 +1,7 @@
 // Página Productos (catálogo, comparar lugares) y perfil de cada producto.
 import { h, crc, pct, todayCR, dayShort, thumb, openPhoto, empty, stat } from '../ui.js';
 import * as C from '../calc.js';
+import { secVencimientos, secSuper, secIva, secCompras } from './resumen.js';
 
 const state = { buscar: '', dueno: '', orden: 'nombre' };
 const DUENOS = ['Casa', 'Ali', 'Jose'];
@@ -53,21 +54,30 @@ export function viewProductos(ctx) {
     [['nombre', 'Por nombre'], ['ref', 'Más caros por kg/L'], ['cambio', 'Más subieron de precio'], ['gasto', 'Más gastado']].map(([v, t]) => h('option', { value: v, selected: state.orden === v || null }, t)));
 
   const cmp = secComparar(D, openProduct);
+  const hoy = todayCR();
   return [
+    h('nav', { class: 'chips', 'aria-label': 'Ir a' },
+      [['venc', 'Por vencerse'], ['prods', 'Productos'], ['comparar', 'Comparar lugares'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
+        .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(id === 'prods' || id === 'comparar' ? `p-${id}` : `r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
+    secVencimientos(ctx, D.cat, D.eventos, hoy),
     cmp.dataset.has ? cmp : null,
-    h('section', { class: 'card' },
+    h('section', { id: 'p-prods', class: 'card sec' },
       h('h2', {}, 'Productos'),
       h('p', { class: 'note' }, 'Precio del empaque y por kilo, litro o unidad (el que sirve para comparar tamaños y lugares). Tocá uno para ver su perfil.'),
       h('div', { class: 'field' }, search),
       h('div', { class: 'prod-ctrl' }, chips, orden),
       count, list),
     cmp.dataset.has ? null : cmp,
+    h('div', { class: 'sec-head', style: { marginTop: '8px' } }, h('h2', {}, 'Análisis del súper')),
+    secSuper(D),
+    secIva(D),
+    secCompras(ctx, D),
   ];
 }
 
 function secComparar(D, openProduct) {
   const rows = C.compararLugares(D.compras, D.productos, D.lugares);
-  return h('section', { class: 'card', 'data-has': rows.length ? '1' : null },
+  return h('section', { id: 'p-comparar', class: 'card sec', 'data-has': rows.length ? '1' : null },
     h('h2', {}, 'Súper vs. chino vs. feria vs. pulpería'),
     rows.length ? [
       h('p', { class: 'note' }, 'Productos comprados en más de un tipo de lugar, por kilo, litro o unidad. En verde, dónde sale más barato.'),

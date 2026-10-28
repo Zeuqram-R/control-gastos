@@ -599,3 +599,6 @@ mark.hl { background: color-mix(in srgb, #f2c94c 55%, transparent); color: inher
 .anio-e { font-size: 24px; margin-bottom: 4px; }
 .rank { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px; flex-shrink: 0; }
 .anio-card { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--panel)), color-mix(in srgb, var(--blue) 14%, var(--panel))); }
+.rest-row { display: flex; align-items: center; gap: 12px; width: 100%; cursor: pointer; }
+.rest-row input { width: 20px; height: 20px; accent-color: var(--accent); flex-shrink: 0; }
+.rest-list li { padding: 8px 0; }

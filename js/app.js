@@ -1,4 +1,6 @@
-import { respaldar } from './respaldo.js';
+import { respaldar, leerRespaldo } from './respaldo.js';
+import { abrirHoja } from './fuente.js';
+import { textToB64 } from './github.js';
 import { createSync } from './sync.js';
 import { GitHubError } from './github.js';
 
@@ -16,7 +18,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.12';
+const APP_VERSION = '5.13';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -358,6 +360,46 @@ function seccionSiri() {
   return h('section', { class: 'card siri' }, cont);
 }
 
+// Restaurar: elegir un respaldo .json, ver qué trae y escoger qué partes volver a poner en GitHub.
+function elegirRespaldo() {
+  const input = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
+  input.addEventListener('change', async () => {
+    const f = input.files[0]; input.remove();
+    if (!f) return;
+    try { mostrarRestaurar(await leerRespaldo(f, sync), f.name); } catch (e) { toast(e.message); }
+  });
+  document.body.append(input); input.click();
+}
+
+function mostrarRestaurar(R, nombre) {
+  const pend = sync.status.pending || 0;
+  const sel = new Set(R.partes.filter((p) => p.k !== 'tipo_cambio').map((p) => p.k));
+  const err = h('p', { class: 'error-msg', hidden: true });
+  const fecha = R.meta?.fecha ? new Date(R.meta.fecha) : null;
+  const cerrar = abrirHoja({ titulo: 'Restaurar un respaldo', kicker: nombre, cuerpo: [
+    h('p', { class: 'note' }, fecha ? `Respaldo del ${fecha.toLocaleDateString('es-CR', { day: 'numeric', month: 'long', year: 'numeric' })}, ${fecha.toLocaleTimeString('es-CR', { hour: 'numeric', minute: '2-digit' })}${R.meta.por ? `, hecho por ${R.meta.por}` : ''}.` : 'Respaldo sin fecha (de una versión anterior de la app).'),
+    h('p', { class: 'note' }, 'Lo que marqués se reemplaza en GitHub por lo del respaldo, para todos los aparatos. Antes de cambiar nada te bajo una copia de cómo está ahora, por si querés volver.'),
+    pend ? h('p', { class: 'error-msg' }, `Hay ${pend} cambio(s) de este aparato sin subir. Esperá a que diga "Al día" (o tocá la barra de arriba) antes de restaurar.`) : null,
+    h('ul', { class: 'rows rest-list' }, R.partes.map((p) => {
+      const cb = h('input', { type: 'checkbox', checked: sel.has(p.k) || null, onchange: (e) => { e.target.checked ? sel.add(p.k) : sel.delete(p.k); } });
+      return h('li', {}, h('label', { class: 'rest-row' }, cb,
+        h('div', { class: 'main' }, p.t, h('span', { class: 'sub' }, `Respaldo: ${p.n} · ahora: ${p.ahora}${p.n < p.ahora ? ` · se perderían ${p.ahora - p.n}` : p.n > p.ahora ? ` · vuelven ${p.n - p.ahora}` : ''}`))));
+    })),
+    err,
+    h('button', { type: 'button', class: 'btn danger block', disabled: pend || null, onclick: async (e) => {
+      if (!sel.size) { err.textContent = 'Marcá al menos una parte.'; err.hidden = false; return; }
+      if (!confirm(`¿Reemplazar ${sel.size} parte(s) con lo del respaldo? Esto cambia los datos en todos los aparatos.`)) return;
+      e.target.disabled = true;
+      respaldar(sync, 'json', `${todayCR()}-antes-de-restaurar`);
+      const partes = R.partes.filter((p) => sel.has(p.k));
+      const files = partes.map((p) => ({ path: `data/${p.k}.json`, b64: textToB64(JSON.stringify(p.datos, null, 1) + '\n') }));
+      await sync.subir(files, `${sync.config.persona} (${sync.config.dispositivo}): restaura respaldo${fecha ? ` del ${fecha.toISOString().slice(0, 10)}` : ''} (${partes.map((p) => p.k).join(', ')})`, { resumen: 'Restaurar respaldo' });
+      cerrar();
+      toast('Restaurando… en unos segundos se ve en todos los aparatos.');
+    } }, 'Restaurar lo marcado'),
+  ] });
+}
+
 function viewAjustes() {
   const s = sync.status;
   const c = sync.config;
@@ -464,7 +506,8 @@ function viewAjustes() {
       h('p', { class: 'note' }, 'Bajá una copia de todos los datos. El Excel trae una hoja por cada cosa (gastos, recurrentes, deudas, compras…); el JSON es la copia exacta, por si algún día hay que restaurar.'),
       h('div', { class: 'btn-col' },
         h('button', { class: 'btn block', type: 'button', onclick: () => { respaldar(sync, 'xlsx', todayCR()); toast('Preparando el Excel…'); } }, 'Descargar Excel'),
-        h('button', { class: 'btn secondary block', type: 'button', onclick: () => respaldar(sync, 'json', todayCR()) }, 'Descargar copia completa (JSON)'))),
+        h('button', { class: 'btn secondary block', type: 'button', onclick: () => respaldar(sync, 'json', todayCR()) }, 'Descargar copia completa (JSON)'),
+        h('button', { class: 'btn secondary block', type: 'button', onclick: () => elegirRespaldo() }, 'Restaurar desde un respaldo…'))),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Almacenamiento'),

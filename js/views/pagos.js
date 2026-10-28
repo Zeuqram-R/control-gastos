@@ -1,6 +1,7 @@
 // Páginas Recurrentes y Deudas, más el "tachar con 5 segundos para deshacer" que comparten.
 import { h, crc, usd, todayCR, dayShort, daysBetween, empty, MESES } from '../ui.js';
 import * as C from '../calc.js';
+import { secCuentas } from './resumen.js';
 
 export const QC = { Ambos: 'var(--accent)', Ali: '#d46fb4', Jose: '#4f8fe8' };
 const QL = { Ambos: 'De ambos', Ali: 'De Ali', Jose: 'De Jose' };
@@ -49,6 +50,13 @@ export function viewRecurrentes(ctx) {
   const act = B.rec.filter((f) => !OFF.includes(f.estado));
   const anuales = act.filter((f) => f.frecuencia === 'anual');
   const persona = sync.config.persona;
+  // Tarjeta Wink: lo usado la quincena anterior, para tachar cuando la paguen.
+  const DW = Object.fromEntries(['gastos', 'recurrentes', 'pagos_recurrentes', 'deudas', 'pagos_deudas', 'abonos', 'cuentas', 'tipo_cambio'].map((k) => [k, sync.data(k)]));
+  const wink = C.winkPendiente(DW, hoy) || (() => {
+    // Si ya se tachó, igual se muestra en el panel como pagado.
+    const p = B.pagRec.get(`${C.WINK}_${q.inicio}`);
+    return p ? { id: C.WINK, nombre: 'Tarjeta Wink (quincena anterior)', prox: q.inicio, monto: p.monto_crc, moneda: 'CRC', monto_crc: p.monto_crc, quien: 'Ambos', fuente: 'Salario', wink: true } : null;
+  })();
 
   // Si el pago sale de una cuenta (p. ej. Bank of America), se descuenta de su saldo.
   const ajustarCuenta = (f, signo) => {
@@ -94,6 +102,7 @@ export function viewRecurrentes(ctx) {
     else if (rstate.panel === 'mes') rows = act.filter((f) => f.frecuencia !== 'anual').flatMap((f) => (f.dia ? C.fechasEntre(f, hoy, C.addDays30(hoy)).map((fecha) => ({ f, fecha })) : [{ f, fecha: null }]));
     else rows = anuales.map((f) => ({ f, fecha: C.proximoPago(f, hoy) }));
     rows = rows.filter((r) => C.aplica(r.f, B.cuentas));
+    if (rstate.panel === 'q' && wink) rows.unshift({ f: wink, fecha: wink.prox });
     rows.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
     const pend = rows.filter((r) => !B.pagRec.has(`${r.f.id}_${r.fecha}`));
     panel = h('section', { class: 'card' },
@@ -106,6 +115,7 @@ export function viewRecurrentes(ctx) {
   }
 
   const enQ = act.map((f) => ({ f, fecha: C.proximoPago(f, q.inicio) })).filter((r) => r.fecha && r.fecha <= q.fin && !B.pagRec.has(`${r.f.id}_${r.fecha}`));
+  if (wink) enQ.unshift({ f: wink, fecha: wink.prox });
   const tileBtn = (k, lbl, num, sub) => h('button', { type: 'button', class: 'card tile tile-btn', 'aria-pressed': String(rstate.panel === k), onclick: () => { rstate.panel = rstate.panel === k ? null : k; rerender(); } },
     h('div', { class: 'lbl' }, `${lbl} ›`), h('div', { class: 'num' }, num), h('div', { class: 'sub' }, sub));
 
@@ -116,6 +126,10 @@ export function viewRecurrentes(ctx) {
       tileBtn('anual', 'Pagos anuales', crc(C.sum(anuales, (f) => f.monto_crc)), `${anuales.length} al año · ${usd(C.sum(anuales.filter((f) => f.moneda === 'USD'), (f) => f.monto))}`),
       h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, 'Tipo de cambio'), h('div', { class: 'num' }, B.tc ? `₡${Number(B.tc.venta).toFixed(2)}` : '—'), h('div', { class: 'sub' }, B.tc ? `Venta · compra ₡${Number(B.tc.compra).toFixed(2)} · ${dayShort(B.tc.fecha)}` : ''))),
     panel,
+    (() => {
+      const DC = Object.fromEntries(['gastos', 'cuentas', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas', 'abonos', 'metas'].map((k) => [k, sync.data(k)]));
+      return secCuentas(ctx, DC, C.balanceQuincena(DC, hoy), hoy);
+    })(),
     calendario(ctx, B, act, payRow),
     otros(B),
   ];
