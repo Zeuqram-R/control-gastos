@@ -18,8 +18,17 @@ export const h = (tag, attrs = {}, ...children) => {
 // Ocultar montos: con el modo privado activo, los montos salen como puntitos hasta tocar el ojo de arriba.
 export const privacy = { hide: false };
 const MASK = '•••••';
-export const crc = (v) => (privacy.hide ? `₡${MASK}` : '₡' + Math.round(Number(v) || 0).toLocaleString('en-US'));
-export const usd = (v) => (privacy.hide ? `$${MASK}` : '$' + (Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 }));
+export const crc = (v) => {
+  if (privacy.hide) return `₡${MASK}`;
+  const n = Math.round(Number(v) || 0);
+  return `${n < 0 ? '−' : ''}₡${Math.abs(n).toLocaleString('en-US')}`;
+};
+export const usd = (v) => {
+  if (privacy.hide) return `$${MASK}`;
+  const n = Number(v) || 0, a = Math.abs(n);
+  const dec = Math.round(a * 100) % 100 ? 2 : 0;
+  return `${n < 0 ? '−' : ''}$${a.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: 2 })}`;
+};
 export const pct = (v, d = 0) => `${(v * 100).toFixed(d)}%`;
 export const todayCR = () => new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10);
 export const ago = (iso) => {

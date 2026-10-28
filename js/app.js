@@ -3,18 +3,18 @@ import { GitHubError } from './github.js';
 
 import { $, h, ago, privacy, preloadPhotos } from './ui.js';
 import { prefs } from './prefs.js';
-import { viewResumen } from './views/resumen.js';
+import { viewResumen, viewCategoria } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 
-const APP_VERSION = '4.0';
+const APP_VERSION = '4.1';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
 const sync = createSync({ onChange: () => { render(); warmPhotos(); }, onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
-const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', setup: 'Control de gastos' };
+const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', setup: 'Control de gastos' };
 
 // Aviso abajo: aparece y se desvanece suave.
 function toast(msg, action, ms) {
@@ -50,7 +50,9 @@ function renderStatus(s) {
 }
 
 // ---------- Navegación ----------
-const SUB = new Set(['historial', 'ajustes', 'producto']);
+const SUB = new Set(['historial', 'ajustes', 'producto', 'categoria']);
+let catActual = null;
+function openCategoria(cat) { catActual = cat; go('categoria'); }
 let productoActual = null;
 function openProduct(clave) { productoActual = clave; go('producto'); }
 let back = 'resumen';
@@ -58,7 +60,7 @@ function go(p) {
   if (SUB.has(p) && !SUB.has(page) && page !== 'setup') back = page;
   page = p;
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === p));
-  if (p !== 'setup') history.replaceState(null, '', '#' + p + (p === 'producto' && productoActual ? `/${productoActual}` : ''));
+  if (p !== 'setup') history.replaceState(null, '', '#' + p + (p === 'producto' && productoActual ? `/${productoActual}` : p === 'categoria' && catActual ? `/${encodeURIComponent(catActual)}` : ''));
   window.scrollTo({ top: 0 });
   render();
 }
@@ -76,10 +78,10 @@ function render() {
   $('#bottom-nav').hidden = !connected;
   $('#btn-ajustes').hidden = !connected;
   if (!connected) page = 'setup';
-  $('#page-title').textContent = TITLES[page] || 'Control de gastos';
+  $('#page-title').textContent = page === 'categoria' && catActual ? (catActual === 'General' ? 'Quincena' : catActual) : (TITLES[page] || 'Control de gastos');
   $('#btn-back').hidden = !SUB.has(page) || !connected;
   $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
-  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
@@ -155,7 +157,7 @@ function needData(fn) {
     if (!sync.hasData()) {
       return h('div', { class: 'card' }, h('h2', {}, 'Bajando los datos…'), h('p', { class: 'note' }, sync.status.state === 'offline' ? 'Sin conexión. Cuando vuelva el internet se bajan solos.' : 'Esto pasa solo la primera vez.'));
     }
-    const out = [].concat(fn({ sync, toast, go, rerender: render, openProduct, clave: productoActual }));
+    const out = [].concat(fn({ sync, toast, go, rerender: render, openProduct, clave: productoActual, openCategoria, cat: catActual }));
     const b = page === 'resumen' ? tokenBanner() : null;
     return b ? [b, ...out] : out;
   };
@@ -495,8 +497,9 @@ async function start() {
   const ok = await sync.init();
   let h0 = location.hash.slice(1);
   if (h0.startsWith('producto/')) { productoActual = decodeURIComponent(h0.slice(9)); h0 = 'producto'; back = 'productos'; }
+  if (h0.startsWith('categoria/')) { catActual = decodeURIComponent(h0.slice(10)); h0 = 'categoria'; back = 'resumen'; }
   const inicio = prefs.get('inicio', 'resumen');
-  page = ok ? (TITLES[h0] && !['setup', 'ajustes', 'historial'].includes(h0) && (h0 !== 'producto' || productoActual) ? h0 : (TITLES[inicio] ? inicio : 'resumen')) : 'setup';
+  page = ok ? (TITLES[h0] && !['setup', 'ajustes', 'historial'].includes(h0) && (h0 !== 'producto' || productoActual) && (h0 !== 'categoria' || catActual) ? h0 : (TITLES[inicio] ? inicio : 'resumen')) : 'setup';
   for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.page === page));
   render();
   renderStatus(sync.status);

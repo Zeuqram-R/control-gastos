@@ -98,6 +98,65 @@ export function proximoPago(f, desde) {
   return okRango(a >= desde ? a : (m === 12 ? mk(y + 1, 1) : mk(y, m + 1)));
 }
 
+// Un pago con condición (p. ej. el cobro de BofA solo si la cuenta está bajo $500).
+export function aplica(f, cuentas = [], saldoOverride = null) {
+  const c = f.condicion;
+  if (!c || !c.cuenta) return true;
+  const cta = cuentas.find((x) => x.id === c.cuenta);
+  if (!cta) return true;
+  const saldo = saldoOverride ?? Number(cta.saldo);
+  if (c.menor_que != null) return saldo < Number(c.menor_que);
+  return true;
+}
+
+// Todas las fechas de un pago recurrente entre dos fechas (incluidas).
+export function fechasEntre(f, desde, hasta) {
+  const out = [];
+  let d = proximoPago(f, desde);
+  let guard = 0;
+  while (d && d <= hasta && guard++ < 400) { out.push(d); d = proximoPago(f, addDays(d, 1)); }
+  return out;
+}
+
+// Deudas atadas a un préstamo en cuotas: lo que falta = cuota × cuotas sin pagar.
+export function ajustarPrestamos(deudas, recurrentes, pagosRec) {
+  const pag = new Set(pagosRec.map((p) => p.id));
+  return deudas.map((d) => {
+    if (!d.recurrente) return d;
+    const f = recurrentes.find((r) => r.id === d.recurrente);
+    if (!f || !f.desde || !f.hasta) return d;
+    const fechas = fechasEntre({ ...f, estado: 'activo' }, d10(f.desde), d10(f.hasta));
+    const faltan = fechas.filter((x) => !pag.has(`${f.id}_${x}`)).length;
+    return { ...d, monto: faltan * Number(f.monto), cuotas_total: fechas.length, cuotas_faltan: faltan };
+  });
+}
+
+// Cuentas bancarias: saldo, cobros que vienen (30 días) y cómo quedaría.
+export function cuentasInfo(D, hoy, dias = 30) {
+  const tc = ultimoTC(D.tipo_cambio);
+  const cuentas = D.cuentas || [];
+  const pag = new Set(D.pagos_recurrentes.map((p) => p.id));
+  const hasta = addDays(hoy, dias);
+  return cuentas.map((c) => {
+    const saldo = Number(c.saldo) || 0;
+    const evs = [];
+    for (const f of D.recurrentes.filter((r) => r.fuente === c.fuente && !['cancelado', 'sin costo', 'terminado'].includes(r.estado))) {
+      for (const fecha of fechasEntre(f, hoy, hasta)) if (!pag.has(`${f.id}_${fecha}`)) evs.push({ f, fecha });
+    }
+    evs.sort((a, b) => a.fecha.localeCompare(b.fecha));
+    let run = saldo;
+    const cobros = [];
+    for (const e of evs) {
+      const montoCta = e.f.moneda === c.moneda ? Number(e.f.monto) : null;
+      if (!aplica(e.f, cuentas, run)) { cobros.push({ ...e, monto: montoCta, omitido: true }); continue; }
+      if (montoCta != null) run -= montoCta;
+      cobros.push({ ...e, monto: montoCta, despues: run });
+    }
+    const aCRC = (v) => (c.moneda === 'USD' ? (tc ? Math.round(v * Number(tc.compra)) : null) : v);
+    return { ...c, saldo, crc: aCRC(saldo), cobros, proyectado: run, proyectado_crc: aCRC(run) };
+  });
+}
+
 // Balance de la quincena: lo que entra, lo que hay que pagar, lo gastado y lo que queda.
 export function balanceQuincena(D, hoy) {
   const q = quincenaDe(hoy);
@@ -108,12 +167,14 @@ export function balanceQuincena(D, hoy) {
   const saldo = sum(saldos, (s) => s.crc);
   const pagRec = new Map(D.pagos_recurrentes.map((p) => [p.id, p]));
   const pagDeu = new Map(D.pagos_deudas.map((p) => [p.id, p]));
-  const activos = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado));
+  // Lo que sale de otras cuentas (p. ej. Bank of America) no cuenta contra el salario de la quincena.
+  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente));
+  const activos = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado) && !deCuenta.has(f.fuente));
   const porPagar = activos.map((f) => ({ ...f, prox: proximoPago(f, hoy) }))
-    .filter((f) => f.prox && f.prox <= q.fin && !pagRec.has(`${f.id}_${f.prox}`));
-  const deudas = deudasCRC(D.deudas, tc);
+    .filter((f) => f.prox && f.prox <= q.fin && !pagRec.has(`${f.id}_${f.prox}`) && aplica(f, D.cuentas || []));
+  const deudas = deudasCRC(ajustarPrestamos(D.deudas, D.recurrentes, D.pagos_recurrentes), tc);
   const deudasQ = deudas.filter((d) => !pagDeu.has(d.id) && d.direccion === 'debemos' && d.fecha_limite && d10(d.fecha_limite) <= q.fin);
-  const tachRec = [...pagRec.values()].filter((r) => r.vence && r.vence >= q.inicio && r.vence <= q.fin);
+  const tachRec = [...pagRec.values()].filter((r) => r.vence && r.vence >= q.inicio && r.vence <= q.fin && !deCuenta.has(r.fuente));
   const tachDeu = deudas.filter((d) => d.direccion === 'debemos' && pagDeu.has(d.id) && d10(pagDeu.get(d.id).fecha) >= q.inicio && d10(pagDeu.get(d.id).fecha) <= q.fin);
   const tachado = sum(tachRec, (r) => r.monto_crc) + sum(tachDeu, (d) => d.crc);
   const gs = D.gastos.filter((g) => d10(g.fecha) >= q.inicio && d10(g.fecha) <= q.fin);
@@ -283,3 +344,5 @@ export function duraciones(compras, eventos, clave) {
     return desde ? { desde, hasta: d10(e.fecha), dias: daysBetween(desde, e.fecha) } : null;
   }).filter(Boolean);
 }
+
+export const addDays30 = (d) => addDays(d, 30);

@@ -29,7 +29,8 @@ function base(sync) {
   return {
     tc,
     rec: C.recurrentesCRC(sync.data('recurrentes'), tc),
-    deudas: C.deudasCRC(sync.data('deudas'), tc),
+    deudas: C.deudasCRC(C.ajustarPrestamos(sync.data('deudas'), sync.data('recurrentes'), sync.data('pagos_recurrentes')), tc),
+    cuentas: sync.data('cuentas'),
     pagRec: new Map(sync.data('pagos_recurrentes').map((p) => [p.id, p])),
     pagDeu: new Map(sync.data('pagos_deudas').map((p) => [p.id, p])),
   };
@@ -48,13 +49,24 @@ export function viewRecurrentes(ctx) {
   const anuales = act.filter((f) => f.frecuencia === 'anual');
   const persona = sync.config.persona;
 
+  // Si el pago sale de una cuenta (p. ej. Bank of America), se descuenta de su saldo.
+  const ajustarCuenta = (f, signo) => {
+    const c = B.cuentas.find((x) => x.fuente === f.fuente);
+    if (!c || c.moneda !== f.moneda) return;
+    const saldo = Math.round((Number(c.saldo) - signo * Number(f.monto)) * 100) / 100;
+    sync.mutate('cuentas', { kind: 'patch', record: { id: c.id, saldo, fecha: hoy } }, `${c.nombre}: ${signo > 0 ? '−' : '+'}${f.moneda === 'USD' ? '$' : '₡'}${f.monto} (${f.nombre})`);
+  };
   const pagar = (f, fecha) => {
     const key = `${f.id}_${fecha}`;
-    toggle(`r:${key}`, () => sync.mutate('pagos_recurrentes', { kind: 'upsert', record: { id: key, recurrente: f.id, vence: fecha, fecha: hoy, monto_crc: f.monto_crc, fuente: f.fuente || 'Salario', por: persona } }, `pagó ${f.nombre} (${dayShort(fecha)})`), rerender);
+    toggle(`r:${key}`, async () => {
+      await sync.mutate('pagos_recurrentes', { kind: 'upsert', record: { id: key, recurrente: f.id, vence: fecha, fecha: hoy, monto_crc: f.monto_crc, fuente: f.fuente || 'Salario', por: persona } }, `pagó ${f.nombre} (${dayShort(fecha)})`);
+      ajustarCuenta(f, 1);
+    }, rerender);
   };
   const despagar = (f, fecha) => {
     const key = `${f.id}_${fecha}`;
     sync.mutate('pagos_recurrentes', { kind: 'delete', id: key }, `deshace el pago de ${f.nombre}`);
+    ajustarCuenta(f, -1);
     toast(`${f.nombre}: ya no está marcado como pagado`);
   };
 
@@ -66,7 +78,7 @@ export function viewRecurrentes(ctx) {
     return h('li', { class: 'pay-row tap' + (paid ? ' pagado' : '') + (p ? ' tachado' : ''), onclick: () => (paid ? despagar(f, fecha) : pagar(f, fecha)) },
       h('span', { class: 'bar', style: { background: colorOf(f.quien) } }),
       h('div', { class: 'main' },
-        h('span', { class: 'nm' }, (paid ? '✓ ' : '') + f.nombre),
+        h('span', { class: 'nm' }, (paid ? '✓ ' : '') + f.nombre + (B.cuentas.some((c) => c.fuente === f.fuente) ? ` · ${f.fuente}` : '')),
         h('span', { class: 'sub' }, paid ? `Pagado el ${dayShort(paid.fecha)}${paid.por ? ` por ${paid.por}` : ''} · tocá para deshacer`
           : `${fecha ? `${dayShort(fecha)}${dias === 0 ? ' · hoy' : dias === 1 ? ' · mañana' : dias > 1 ? ` · en ${dias} días` : dias < 0 ? ` · hace ${-dias} días` : ''}` : 'Sin fecha'} · ${QL[f.quien] || QL.Ambos}${sub ? ` · ${sub}` : ''}`),
         p ? h('span', { class: 'undo' }, undoTxt(p)) : null),
@@ -78,12 +90,14 @@ export function viewRecurrentes(ctx) {
   if (rstate.panel) {
     let rows;
     if (rstate.panel === 'q') rows = act.map((f) => ({ f, fecha: C.proximoPago(f, q.inicio) })).filter((r) => r.fecha && r.fecha <= q.fin);
+    else if (rstate.panel === 'mes') rows = act.filter((f) => f.frecuencia !== 'anual').flatMap((f) => (f.dia ? C.fechasEntre(f, hoy, C.addDays30(hoy)).map((fecha) => ({ f, fecha })) : [{ f, fecha: null }]));
     else rows = anuales.map((f) => ({ f, fecha: C.proximoPago(f, hoy) }));
+    rows = rows.filter((r) => C.aplica(r.f, B.cuentas));
     rows.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
     const pend = rows.filter((r) => !B.pagRec.has(`${r.f.id}_${r.fecha}`));
     panel = h('section', { class: 'card' },
       h('div', { class: 'card-head' },
-        h('h2', {}, rstate.panel === 'q' ? `Por pagar esta quincena (${dayShort(q.inicio)} – ${dayShort(q.fin)})` : 'Pagos anuales'),
+        h('h2', {}, rstate.panel === 'q' ? `Por pagar esta quincena (${dayShort(q.inicio)} – ${dayShort(q.fin)})` : rstate.panel === 'mes' ? 'Recurrentes de los próximos 30 días' : 'Pagos anuales'),
         h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Cerrar', onclick: () => { rstate.panel = null; rerender(); } }, '✕')),
       h('p', { class: 'note' }, 'Tocá uno para marcarlo como pagado (5 segundos para deshacer). Se ve igual en todos los aparatos.'),
       rows.length ? h('ul', { class: 'rows' }, rows.map((r) => payRow(r.f, r.fecha, [r.f.rango, r.f.categoria, r.f.fuente].filter(Boolean).join(' · ')))) : empty('Nada por aquí.'),
@@ -96,7 +110,7 @@ export function viewRecurrentes(ctx) {
 
   return [
     h('section', { class: 'tiles' },
-      h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, 'Recurrentes al mes'), h('div', { class: 'num' }, crc(C.sum(act, (f) => f.mensual_crc))), h('div', { class: 'sub' }, `${act.length} pagos activos · anuales repartidos en 12`)),
+      tileBtn('mes', 'Recurrentes al mes', crc(C.sum(act, (f) => f.mensual_crc)), `${act.length} pagos activos · anuales repartidos en 12`),
       tileBtn('q', 'Por pagar esta quincena', crc(C.sum(enQ, (r) => r.f.monto_crc)), `${enQ.length} pago(s) hasta el ${dayShort(q.fin)}`),
       tileBtn('anual', 'Pagos anuales', crc(C.sum(anuales, (f) => f.monto_crc)), `${anuales.length} al año · ${usd(C.sum(anuales.filter((f) => f.moneda === 'USD'), (f) => f.monto))}`),
       h('div', { class: 'card tile' }, h('div', { class: 'lbl' }, 'Tipo de cambio'), h('div', { class: 'num' }, B.tc ? `₡${Number(B.tc.venta).toFixed(2)}` : '—'), h('div', { class: 'sub' }, B.tc ? `Venta · compra ₡${Number(B.tc.compra).toFixed(2)} · ${dayShort(B.tc.fecha)}` : ''))),
@@ -219,6 +233,12 @@ export function viewDeudas(ctx) {
       h('div', { class: 'deuda-h' }, h('b', {}, d0.persona), h('span', { class: `pill deuda-pill ${cls}` }, multi && new Set(list.map((d) => d.de_quien)).size > 1 ? 'Varios' : (d0.de_quien || 'Ambos'))),
       h('div', { class: 'deuda-tot' }, `${crc(sumC(list))} · ${usd(Math.round(sumU(list) * 100) / 100)}`),
     ];
+    if (!multi && d0.recurrente) {
+      return h('div', { class: `deuda ${cls} fija` },
+        head,
+        h('div', { class: 'deuda-it' }, h('span', {}, `Faltan ${d0.cuotas_faltan} de ${d0.cuotas_total} cuotas`), h('span', {}, crc(d0.crc))),
+        h('div', { class: 'deuda-nota' }, 'Baja sola cuando se marca una cuota como pagada en Recurrentes.'));
+    }
     if (!multi) {
       const p = pendOf(`d:${d0.id}`);
       return h('div', { class: `deuda ${cls}` + (p ? ' tachado' : ''), role: 'button', onclick: () => pagar(d0) },

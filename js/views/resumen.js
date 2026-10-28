@@ -5,9 +5,11 @@ import * as C from '../calc.js';
 const state = { buscar: '', todoVenc: false, todoCompras: false };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
 
+let openCat = null;
 export function viewResumen(ctx) {
   const { sync } = ctx;
-  const D = Object.fromEntries(['gastos', 'compras', 'productos', 'eventos', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas']
+  openCat = ctx.openCategoria;
+  const D = Object.fromEntries(['gastos', 'cuentas', 'compras', 'productos', 'eventos', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas']
     .map((k) => [k, sync.data(k)]));
   const hoy = todayCR();
   const B = C.balanceQuincena(D, hoy);
@@ -15,9 +17,10 @@ export function viewResumen(ctx) {
 
   return [
     h('nav', { class: 'chips', 'aria-label': 'Ir a' },
-      [['q', 'Quincena'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Gastos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
+      [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Gastos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
         .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(`r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
     secQuincena(D, B, hoy),
+    secCuentas(ctx, D, B, hoy),
     secTipos(D, B, hoy),
     secMes(D),
     secVencimientos(ctx, cat, D.eventos, hoy),
@@ -74,9 +77,9 @@ function genCard(D, B, catName, hoy, compact) {
   const fuente = cur.wink ? `Salario ${crc(cur.salario)} · Wink ${crc(cur.wink)}` : cur.gastado ? 'Todo de salario' : 'Sin gastos todavía';
   const ref = presu || prom || proy || 1;
   const over = presu && cur.gastado > presu;
-  return h('div', { class: 'card qcard' },
-    compact ? h('h3', {}, h('span', {}, catName), C.CAT_SUB[catName] ? h('span', { class: 'muted' }, C.CAT_SUB[catName]) : null)
-      : h('h3', {}, h('span', {}, 'Gasto de la quincena')),
+  return h('div', { class: 'card qcard tap-card', role: 'button', 'aria-label': `Ver los gastos de ${catName === 'General' ? 'la quincena' : catName}`, onclick: () => openCat && openCat(catName) },
+    compact ? h('h3', {}, h('span', {}, catName, h('span', { class: 'chev' }, ' ›')), C.CAT_SUB[catName] ? h('span', { class: 'muted' }, C.CAT_SUB[catName]) : null)
+      : h('h3', {}, h('span', {}, 'Gasto de la quincena', h('span', { class: 'chev' }, ' ›'))),
     h('div', { class: 'qgrid' + (compact ? ' two' : '') },
       stat('Gastado', crc(cur.gastado), `${cur.n} gasto(s) · ${fuente}`),
       stat('Presupuesto', presu ? crc(presu) : 'Sin definir', presu ? (presu - cur.gastado >= 0 ? `Quedan ${crc(presu - cur.gastado)}` : `Pasado por ${crc(cur.gastado - presu)}`) : (prom ? `Promedio: ${crc(prom)}` : 'Con 2 quincenas te sugiero uno')),
@@ -209,4 +212,92 @@ function secCompras(ctx, D) {
     h('p', { class: 'note' }, 'Cada artículo de cada factura, con su precio por kilo, litro o unidad.'),
     h('div', { class: 'field' }, input),
     list);
+}
+
+// ---------- Cuentas (Bank of America y las que vengan) ----------
+function secCuentas(ctx, D, B, hoy) {
+  const { sync, toast, rerender } = ctx;
+  const info = C.cuentasInfo(D, hoy, 35);
+  if (!info.length) return null;
+  const totalCRC = C.sum(info, (c) => c.crc);
+  return h('section', { id: 'r-cuentas', class: 'sec' },
+    h('div', { class: 'sec-head' }, h('h2', {}, 'Cuentas'),
+      h('p', { class: 'note' }, `Plata en cuentas aparte del salario de la quincena. Con lo que queda libre de la quincena, en total tienen unos ${crc(B.queda + totalCRC)}.`)),
+    info.map((c) => {
+      const fmt = (v) => (c.moneda === 'USD' ? usd(v) : crc(v));
+      const editId = `cta-${c.id}`;
+      const input = h('input', { class: 'input', id: editId, inputmode: 'decimal', placeholder: c.moneda === 'USD' ? '0.00' : '0', autocomplete: 'off' });
+      const guardar = async () => {
+        const v = Number(String(input.value).replace(/[^\d.-]/g, ''));
+        if (!input.value.trim() || Number.isNaN(v)) { input.focus(); return; }
+        await sync.mutate('cuentas', { kind: 'patch', record: { id: c.id, saldo: v, fecha: hoy } }, `saldo de ${c.nombre}: ${c.moneda === 'USD' ? '$' : '₡'}${v}`);
+        toast('Saldo actualizado.');
+      };
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') guardar(); });
+      const neg = c.proyectado < 0;
+      return h('div', { class: 'card cuenta' },
+        h('div', { class: 'cuenta-h' },
+          h('div', {}, h('b', {}, c.nombre), h('span', { class: 'sub' }, `${c.dueno ? `De ${c.dueno} · ` : ''}actualizado el ${dayShort(c.fecha)}`)),
+          h('div', { class: 'cuenta-saldo' }, h('div', { class: 'num', style: { color: c.saldo < 0 ? 'var(--bad)' : null } }, fmt(c.saldo)), c.moneda === 'USD' ? h('span', { class: 'sub' }, `≈ ${crc(c.crc)} (compra)`) : null)),
+        c.cobros.length ? [
+          h('div', { class: 'qhist-t' }, 'Lo que se cobra en los próximos 35 días'),
+          h('ul', { class: 'rows' }, c.cobros.map((x) => h('li', { class: x.omitido ? 'off' : '' },
+            h('div', { class: 'main' }, x.f.nombre, h('span', { class: 'sub' }, `${dayShort(x.fecha)}${x.omitido ? ` · no se cobra: la cuenta tendría ${fmt(x.f.condicion.menor_que)} o más` : ` · queda en ${fmt(x.despues)}`}`)),
+            h('span', { class: 'amt', style: { color: !x.omitido && x.despues < 0 ? 'var(--bad)' : null } }, x.monto != null ? `−${fmt(x.monto)}` : '—')))),
+          h('p', { class: `cuenta-proy${neg ? ' bad' : ''}` }, neg
+            ? `Para cubrir todo hay que meter unos ${fmt(Math.ceil(-c.proyectado * 100) / 100)} antes del ${dayShort(c.cobros.find((x) => !x.omitido && x.despues < 0)?.fecha)}.`
+            : `Después de esos cobros quedaría en ${fmt(c.proyectado)}.`),
+        ] : h('p', { class: 'note' }, 'No hay cobros en los próximos 35 días.'),
+        c.nota ? h('p', { class: 'note', style: { marginTop: '8px' } }, c.nota) : null,
+        h('details', { class: 'pp' }, h('summary', {}, 'Actualizar saldo'),
+          h('div', { class: 'row-add', style: { marginTop: '10px' } }, input, h('button', { class: 'btn', type: 'button', onclick: guardar }, 'Guardar')),
+          h('p', { class: 'note', style: { margin: '6px 0 0' } }, 'Cuando marcás pagado en Recurrentes algo que sale de esta cuenta, se descuenta solo.')));
+    }));
+}
+
+// ---------- Detalle de una categoría (lo que suma esa cajita) ----------
+export function viewCategoria(ctx) {
+  const { sync, cat, openProduct } = ctx;
+  const D = Object.fromEntries(['gastos', 'cuentas', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas'].map((k) => [k, sync.data(k)]));
+  const hoy = todayCR();
+  const B = C.balanceQuincena(D, hoy);
+  const { q } = B;
+  const general = cat === 'General';
+  const delCat = D.gastos.filter((g) => general || g.categoria === cat);
+  const enQ = delCat.filter((g) => g.fecha >= q.inicio && g.fecha <= q.fin).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const items = enQ.map((g) => ({ fecha: g.fecha, titulo: g.comercio, sub: [g.descripcion, general ? g.categoria : g.subcategoria, g.fuente].filter(Boolean).join(' · '), monto: g.monto, tipo: 'gasto' }));
+  if (general) {
+    const tc = C.ultimoTC(D.tipo_cambio);
+    const deCuenta = new Set(D.cuentas.map((c) => c.fuente));
+    const recs = new Map(D.recurrentes.map((r) => [r.id, r]));
+    for (const p of D.pagos_recurrentes.filter((x) => x.vence >= q.inicio && x.vence <= q.fin && !deCuenta.has(x.fuente))) {
+      const r = recs.get(p.recurrente || p.id.split('_')[0]) || {};
+      items.push({ fecha: p.fecha, titulo: r.nombre || 'Pago recurrente', sub: `Pago tachado (vence ${dayShort(p.vence)})${p.fuente ? ` · ${p.fuente}` : ''}`, monto: p.monto_crc, tipo: 'rec' });
+    }
+    const deudas = C.deudasCRC(D.deudas, tc);
+    for (const p of D.pagos_deudas.filter((x) => x.fecha >= q.inicio && x.fecha <= q.fin)) {
+      const d = deudas.find((x) => x.id === p.id);
+      if (!d || d.direccion !== 'debemos') continue;
+      items.push({ fecha: p.fecha, titulo: `${d.persona} · ${d.concepto}`, sub: `Deuda pagada${p.fuente ? ` · ${p.fuente}` : ''}`, monto: d.crc, tipo: 'deuda' });
+    }
+    items.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  }
+  const total = C.sum(items, (i) => i.monto);
+  const pasadas = [...C.groupBy(delCat.filter((g) => g.fecha < q.inicio), (g) => C.quincenaDe(g.fecha).inicio)].sort((a, b) => b[0].localeCompare(a[0]));
+  const TIPO = { gasto: null, rec: 'Recurrente', deuda: 'Deuda' };
+  const row = (i) => h('li', {},
+    h('div', { class: 'main' }, i.titulo, h('span', { class: 'sub' }, `${dayShort(i.fecha)}${i.sub ? ` · ${i.sub}` : ''}`), TIPO[i.tipo] ? h('span', { class: `pill ${i.tipo === 'deuda' ? 'pend' : 'rec'}` }, TIPO[i.tipo]) : null),
+    h('span', { class: 'amt' }, crc(i.monto)));
+  return [
+    h('section', { class: 'card' },
+      h('h2', {}, general ? 'Todo lo de la quincena' : cat),
+      h('p', { class: 'note' }, `Quincena del ${dayShort(q.inicio)} al ${dayShort(q.fin)} · ${items.length} movimiento(s)${general ? ' (gastos, pagos recurrentes tachados y deudas pagadas)' : ''}.`),
+      h('div', { class: 'cat-total' }, h('span', {}, 'Total'), h('b', {}, crc(total))),
+      items.length ? h('ul', { class: 'rows' }, items.map(row)) : empty('Nada en esta quincena.')),
+    pasadas.length ? h('section', { class: 'card' },
+      h('h2', {}, 'Quincenas anteriores'),
+      pasadas.map(([ini, gs]) => h('details', { class: 'pp' },
+        h('summary', {}, `${dayShort(ini)} – ${dayShort(C.quincenaDe(ini).fin)} · ${crc(C.sum(gs, (g) => g.monto))}`),
+        h('ul', { class: 'rows' }, gs.map((g) => row({ fecha: g.fecha, titulo: g.comercio, sub: [g.descripcion, g.fuente].filter(Boolean).join(' · '), monto: g.monto, tipo: 'gasto' })))))) : null,
+  ];
 }
