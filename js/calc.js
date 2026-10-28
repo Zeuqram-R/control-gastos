@@ -386,3 +386,47 @@ export function duraciones(compras, eventos, clave) {
 }
 
 export const addDays30 = (d) => addDays(d, 30);
+
+// Proyección de las próximas quincenas: lo que sobra de la anterior + salario − pagos y deudas con fecha
+// − la tarjeta Wink usada en la quincena anterior − el gasto del día a día estimado.
+export function proyeccion(D, hoy, n = 12) {
+  const tc = ultimoTC(D.tipo_cambio);
+  const B = balanceQuincena(D, hoy);
+  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente));
+  const pagRec = new Set(D.pagos_recurrentes.map((p) => p.id));
+  const pagDeu = new Set(D.pagos_deudas.map((p) => p.id));
+  const recs = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado) && !deCuenta.has(f.fuente));
+  const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc).filter((d) => d.direccion === 'debemos' && !pagDeu.has(d.id));
+  const movs = movimientos(D);
+  // Gasto del día a día (súper, salidas, transporte…): promedio de las quincenas cerradas; si no hay, lo de la quincena actual.
+  const variablesDe = (ini, fin) => sum(movs.filter((m) => m.fecha >= ini && m.fecha <= fin && m.gtipo === 'Variable'), (m) => m.monto);
+  const cerradas = [...groupBy(movs.filter((m) => m.fecha < B.q.inicio), (m) => quincenaDe(m.fecha).inicio)].map(([ini]) => variablesDe(ini, quincenaDe(ini).fin));
+  const estVar = cerradas.length ? Math.round(sum(cerradas) / cerradas.length) : variablesDe(B.q.inicio, B.q.fin);
+  const estBase = cerradas.length ? `promedio de ${cerradas.length} quincena(s)` : 'lo que va de esta quincena';
+  const netos = ingresosNetos(D.ingresos);
+  const out = [];
+  let prev = { q: B.q, queda: B.queda, wink: sum(movs.filter((m) => m.fuente === 'Wink' && m.fecha >= B.q.inicio && m.fecha <= B.q.fin), (m) => m.monto) };
+  for (let i = 0; i < n; i++) {
+    const q = quincenaDe(addDays(prev.q.fin, 1));
+    const ing = netos.filter((r) => r.quincena === q.numero);
+    const neto = sum(ing, (r) => r.neto);
+    const pagos = [];
+    for (const f of recs) {
+      if (!aplica(f, D.cuentas || [])) continue;
+      for (const fecha of fechasEntre(f, q.inicio, q.fin)) if (!pagRec.has(`${f.id}_${fecha}`)) pagos.push({ fecha, nombre: f.nombre, monto: f.monto_crc || 0, quien: f.quien, tipo: 'rec' });
+    }
+    for (const d of deudas) {
+      const fl = d10(d.fecha_limite);
+      if (fl && fl >= q.inicio && fl <= q.fin) pagos.push({ fecha: fl, nombre: `${d.concepto} (${d.persona})`, monto: d.crc || 0, quien: d.de_quien, tipo: 'deuda' });
+    }
+    if (prev.wink) pagos.push({ fecha: q.inicio, nombre: 'Tarjeta Wink (lo usado la quincena anterior)', monto: prev.wink, quien: 'Ambos', tipo: 'tarjeta' });
+    pagos.sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const porPagar = sum(pagos, (p) => p.monto);
+    const queda = prev.queda + neto - porPagar - estVar;
+    const r = { q, ing, neto, arrastre: prev.queda, pagos, porPagar, estVar, estBase, queda };
+    out.push(r);
+    prev = { q, queda, wink: 0 };
+  }
+  const sinFecha = deudas.filter((d) => !d.fecha_limite && !d.recurrente);
+  return { actual: B, futuras: out, sinFecha: { n: sinFecha.length, total: sum(sinFecha, (d) => d.crc) } };
+}

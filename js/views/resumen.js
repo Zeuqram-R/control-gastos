@@ -3,7 +3,7 @@ import { h, privacy, addDays, crc, usd, pct, todayCR, dayShort, daysBetween, MES
 import * as C from '../calc.js';
 import { preguntasAbiertas } from './facturas.js';
 
-const state = { buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0 };
+const state = { buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0, qOff: 0 };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
 
 let openCat = null;
@@ -21,7 +21,7 @@ export function viewResumen(ctx) {
       [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Movimientos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
         .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(`r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
     secFacturas(ctx),
-    secQuincena(D, B, hoy),
+    state.qOff > 0 ? secProyeccion(ctx, D, hoy) : secQuincena(ctx, D, B, hoy),
     secCuentas(ctx, D, B, hoy),
     secTipos(D, B, hoy),
     secMes(D),
@@ -33,7 +33,39 @@ export function viewResumen(ctx) {
   ];
 }
 
-function secQuincena(D, B, hoy) {
+// Flechas para moverse entre la quincena actual y las proyecciones de las siguientes.
+function qNav(ctx, titulo) {
+  const btn = (lbl, aria, delta, off) => h('button', { type: 'button', class: 'icon-btn', 'aria-label': aria, disabled: off || null, onclick: () => { state.qOff += delta; ctx.rerender(); } }, lbl);
+  return h('div', { class: 'per-nav q-nav' },
+    btn('‹', 'Quincena anterior', -1, state.qOff <= 0),
+    h('div', { class: 'per-t' }, h('b', {}, titulo), h('span', { class: 'sub' }, state.qOff === 0 ? 'Tocá › para ver las próximas' : `Proyección · ${state.qOff} quincena${state.qOff === 1 ? '' : 's'} adelante`)),
+    btn('›', 'Quincena siguiente', 1, state.qOff >= 12));
+}
+
+function secProyeccion(ctx, D, hoy) {
+  const P = C.proyeccion(D, hoy, 12);
+  const r = P.futuras[state.qOff - 1];
+  const neg = r.queda < 0;
+  const quedaTxt = privacy.hide ? crc(0) : `${neg ? '−' : ''}${crc(Math.abs(r.queda))}`;
+  return h('section', { id: 'r-q', class: 'sec' },
+    qNav(ctx, `${dayShort(r.q.inicio)} – ${dayShort(r.q.fin)}`),
+    h('div', { class: 'card proy' },
+      h('div', { class: 'qgrid' },
+        stat('Sobra de la anterior', `${r.arrastre < 0 && !privacy.hide ? '−' : ''}${crc(Math.abs(r.arrastre))}`, r.arrastre < 0 ? 'La anterior queda en negativo' : 'Lo que quedaría libre de la quincena anterior', r.arrastre < 0 ? 'var(--bad)' : null),
+        stat('Salario', crc(r.neto), r.ing.length ? `${r.ing.map((x) => x.persona).join(' + ')} · quincena ${r.q.numero === 1 ? 'del 12' : 'del 26'} (neto)` : 'Sin salario anotado'),
+        stat('Por pagar', crc(r.porPagar), `${r.pagos.length} pago(s) con fecha${r.pagos.some((p) => p.tipo === 'tarjeta') ? ' · incluye la tarjeta Wink' : ''}`),
+        stat('Día a día (estimado)', crc(r.estVar), `Súper, salidas, transporte… (${r.estBase})`)),
+      h('div', { class: `proy-total${neg ? ' bad' : ''}` }, h('span', {}, neg ? 'Faltaría' : 'Quedaría libre'), h('b', {}, quedaTxt)),
+      r.pagos.length ? h('details', { class: 'pp' },
+        h('summary', {}, 'Ver lo que hay que pagar'),
+        h('ul', { class: 'rows' }, r.pagos.map((i) => h('li', {},
+          h('span', { class: `who who-${(i.quien || 'Ambos').toLowerCase()}` }),
+          h('div', { class: 'main' }, i.nombre, h('span', { class: 'sub' }, `${dayShort(i.fecha)} · ${i.quien || 'Ambos'}${i.tipo === 'deuda' ? ' · deuda' : ''}`)),
+          h('span', { class: 'amt' }, crc(i.monto)))))) : null,
+      h('p', { class: 'note', style: { margin: '12px 0 0' } }, `Es una estimación: no incluye cobros sin fecha (como la luz)${P.sinFecha.n ? ` ni ${P.sinFecha.n} deuda(s) sin fecha por ${crc(P.sinFecha.total)}` : ''}. Si una deuda tiene fecha para pagarse (decímela y se la pongo) o usan la tarjeta Wink, se suma sola.`)));
+}
+
+function secQuincena(ctx, D, B, hoy) {
   const { q } = B;
   const dia = Math.min(daysBetween(q.inicio, hoy) + 1, q.dias);
   const ingSub = `Salario de ${B.ing.map((r) => r.persona).join(' + ') || '—'} ${crc(B.neto)} neto (${crc(B.bruto)} bruto − CCSS)`
@@ -44,8 +76,8 @@ function secQuincena(D, B, hoy) {
   ].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const gen = genCard(D, B, 'General', hoy, false);
   return h('section', { id: 'r-q', class: 'sec' },
+    qNav(ctx, `Quincena actual · ${dayShort(q.inicio)} – ${dayShort(q.fin)}`),
     h('div', { class: 'sec-head' },
-      h('h2', {}, `Quincena actual · ${dayShort(q.inicio)} – ${dayShort(q.fin)}`),
       h('p', { class: 'note' }, `Día ${dia} de ${q.dias}. Las quincenas empiezan el 12 y el 26, cuando le pagan a Ali. Salario = cuentas; Wink = tarjeta de crédito.`
         + (B.tc ? ` Dólar: ${crc2(B.tc.venta)} venta · ${crc2(B.tc.compra)} compra (${dayShort(B.tc.fecha)}).` : ''))),
     h('div', { class: 'card' },

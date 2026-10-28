@@ -471,3 +471,10 @@ html.locked #app { filter: blur(18px); pointer-events: none; }
 .lock-btn { min-width: 240px; }
 .lock-err { color: var(--bad); font-size: 13.5px; margin: 0; }
 .lock-reset { margin-top: 18px; color: var(--muted); font-size: 13px; }
+
+.q-nav { margin: 4px 0 8px; }
+.q-nav .per-t b { font-size: 17px; }
+.proy { border-style: dashed; }
+.proy-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 16px; }
+.proy-total b { font-size: 26px; color: var(--ok); font-variant-numeric: tabular-nums; }
+.proy-total.bad b { color: var(--bad); }
