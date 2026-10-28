@@ -11,17 +11,18 @@ import { viewResumen, viewCategoria } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
 import { viewMetas } from './views/metas.js';
 import { viewNegocio } from './views/negocio.js';
+import { viewAnio } from './views/anio.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.11';
+const APP_VERSION = '5.12';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
 const sync = createSync({ onChange: () => { render(); warmPhotos(); }, onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
-const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', metas: 'Metas', negocio: 'Santo Coco', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', facturas: 'Facturas', setup: 'Control de gastos' };
+const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', metas: 'Metas', negocio: 'Santo Coco', anio: 'Tu año', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', facturas: 'Facturas', setup: 'Control de gastos' };
 
 // Aviso abajo: aparece y se desvanece suave.
 function toast(msg, action, ms) {
@@ -57,7 +58,7 @@ function renderStatus(s) {
 }
 
 // ---------- Navegación ----------
-const SUB = new Set(['historial', 'ajustes', 'producto', 'categoria', 'facturas', 'negocio']);
+const SUB = new Set(['historial', 'ajustes', 'producto', 'categoria', 'facturas', 'negocio', 'anio']);
 let catActual = null;
 function openCategoria(cat) { catActual = cat; go('categoria'); }
 let productoActual = null;
@@ -92,7 +93,7 @@ function render() {
   $('#page-title').textContent = page === 'categoria' && catActual ? (catActual === 'General' ? 'Quincena' : catActual) : (TITLES[page] || 'Control de gastos');
   $('#btn-back').hidden = !SUB.has(page) || !connected;
   $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
-  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), facturas: needData(viewFacturas), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), metas: needData(viewMetas), negocio: needData(viewNegocio), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), facturas: needData(viewFacturas), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), metas: needData(viewMetas), negocio: needData(viewNegocio), anio: needData(viewAnio), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
@@ -275,6 +276,19 @@ const SIRI_TXT = {
     campos: (p) => [['monto', 'Número', '"Entrada proporcionada" del paso 2'], ['comercio', 'Texto', '"Entrada proporcionada" del paso 3'], ['categoria', 'Texto', '"Elemento elegido" del paso 4'], ['fuente', 'Texto', '"Elemento elegido" del paso 5'], ['quien', 'Texto', p]],
     final: 'Para dólares, agregá en client_payload el campo moneda = USD. El token queda guardado solo en el atajo de tu iPhone; cuando lo renovés, cambialo también ahí.',
     copiado: 'copiado', copiar: 'Copiar',
+    venta: {
+      intro: 'Para Santo Coco: decí "Oye Siri, anotar venta" (por ejemplo, apenas entra un SINPE). Te pregunta cuánto, qué se vendió y cómo se cobró, y lo anota en Santo Coco sin abrir la app.',
+      pasos: () => [
+        ['Abrí la app Atajos, tocá + (nuevo atajo) y ponele de nombre "Anotar venta".', ['Ese nombre es lo que le decís a Siri.']],
+        ['Agregá la acción "Pedir entrada".', ['Tipo de entrada: Número', 'Pregunta: ¿Cuánto fue la venta?']],
+        ['Agregá otra acción "Pedir entrada".', ['Tipo de entrada: Texto', 'Pregunta: ¿Qué se vendió o a quién?', 'Si no querés detalle, dejalo en blanco al usarlo.']],
+        ['Agregá "Lista" y después "Elegir de la lista".', ['Elementos: SINPE, Efectivo, Tarjeta', 'Indicación: ¿Cómo se cobró?']],
+        ['Agregá "Obtener contenido de URL" y pegá esta URL:', ['@url', 'Tocá la flechita (Mostrar más). Método: POST', 'Encabezados → Agregar nuevo encabezado:', '• Authorization = Bearer + espacio + tu token (está en Contraseñas de Apple)', '• Accept =', '@accept', 'Cuerpo de la solicitud: JSON. Agregá estos campos:', '• event_type (Texto) = venta', '• client_payload (Diccionario), y adentro:', '@campos']],
+        ['Agregá "Mostrar notificación" con el texto "Venta anotada ✓".', ['Listo. Probalo con ▶︎ en Atajos o diciéndole a Siri "Anotar venta".']],
+      ],
+      campos: (p) => [['monto', 'Número', '"Entrada proporcionada" del paso 2'], ['detalle', 'Texto', '"Entrada proporcionada" del paso 3'], ['cobro', 'Texto', '"Elemento elegido" del paso 4'], ['quien', 'Texto', p]],
+      final: 'Si ya armaste el de gastos, podés duplicarlo (mantené presionado → Duplicar) y cambiar solo lo necesario. El token es el mismo.',
+    },
   },
   en: {
     intro: 'Say "Hey Siri, anotar gasto": it asks how much, what for, the category and how it was paid, and logs it without opening the app (it shows up here a few seconds later). You can also keep it as a Home Screen button or a Shortcuts widget.',
@@ -292,6 +306,19 @@ const SIRI_TXT = {
     campos: (p) => [['monto', 'Number', '"Provided Input" from step 2'], ['comercio', 'Text', '"Provided Input" from step 3'], ['categoria', 'Text', '"Chosen Item" from step 4'], ['fuente', 'Text', '"Chosen Item" from step 5'], ['quien', 'Text', p]],
     final: 'For dollars, add a field moneda = USD inside client_payload. The token is stored only in the shortcut on your iPhone; when you renew it, update it there too.',
     copiado: 'copied', copiar: 'Copy',
+    venta: {
+      intro: 'For Santo Coco: say "Hey Siri, anotar venta" (for example, right when a SINPE comes in). It asks how much, what was sold and how it was paid, and logs it in Santo Coco without opening the app.',
+      pasos: () => [
+        ['Open the Shortcuts app, tap + (new shortcut) and name it "Anotar venta".', ['That name is what you say to Siri.']],
+        ['Add the "Ask for Input" action.', ['Input Type: Number', 'Prompt: ¿Cuánto fue la venta?']],
+        ['Add another "Ask for Input" action.', ['Input Type: Text', 'Prompt: ¿Qué se vendió o a quién?', 'You can leave it blank when using it.']],
+        ['Add a "List" action, then "Choose from List".', ['Items: SINPE, Efectivo, Tarjeta', 'Prompt: ¿Cómo se cobró?']],
+        ['Add "Get Contents of URL" and paste this URL:', ['@url', 'Tap the small arrow (Show More). Method: POST', 'Headers → Add new header:', '• Authorization = Bearer + space + your token (it’s in Apple Passwords)', '• Accept =', '@accept', 'Request Body: JSON. Add these fields:', '• event_type (Text) = venta', '• client_payload (Dictionary), and inside it:', '@campos']],
+        ['Add "Show Notification" with the text "Venta anotada ✓".', ['Done. Test it with ▶︎ in Shortcuts or by saying "Anotar venta" to Siri.']],
+      ],
+      campos: (p) => [['monto', 'Number', '"Provided Input" from step 2'], ['detalle', 'Text', '"Provided Input" from step 3'], ['cobro', 'Text', '"Chosen Item" from step 4'], ['quien', 'Text', p]],
+      final: 'If you already built the expense one, you can duplicate it (long-press → Duplicate) and change only what’s needed. The token is the same.',
+    },
   },
 };
 function seccionSiri() {
@@ -299,10 +326,12 @@ function seccionSiri() {
   const URL_API = 'https://api.github.com/repos/Zeuqram-R/control-gastos-datos/dispatches';
   const ACCEPT = 'application/vnd.github+json';
   let lang = prefs.get('siriLang', 'es');
+  let tipo = prefs.get('siriTipo', 'gasto');
   const cont = h('div', {});
   const abierto = { v: false };
   const pintar = () => {
-    const T = SIRI_TXT[lang];
+    const T0 = SIRI_TXT[lang];
+    const T = tipo === 'venta' ? { ...T0, ...T0.venta } : T0;
     const copiar = (txt) => h('button', { type: 'button', class: 'btn secondary sm', onclick: async () => {
       try { await navigator.clipboard.writeText(txt); toast(`${txt.length > 40 ? 'URL' : txt} ${T.copiado}.`); } catch (e) { toast('No se pudo copiar; mantené presionado el texto.'); }
     } }, T.copiar);
@@ -317,8 +346,11 @@ function seccionSiri() {
       h('p', { class: 'note', style: { margin: '10px 0 0' } }, T.nota),
       h('ol', { class: 'siri-pasos' }, T.pasos(persona).map(([t, ls]) => h('li', {}, h('b', {}, t), ls.map(linea)))),
       h('p', { class: 'note', style: { margin: '12px 0 0' } }, T.final));
+    const segTipo = h('div', { class: 'seg siri-tipo', role: 'group', 'aria-label': 'Tipo de atajo' },
+      [['gasto', lang === 'en' ? 'Expense' : 'Gasto'], ['venta', lang === 'en' ? 'Sale (Santo Coco)' : 'Venta (Santo Coco)']].map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(tipo === k), onclick: () => { tipo = k; prefs.set('siriTipo', k); pintar(); } }, t)));
     cont.replaceChildren(
       h('div', { class: 'card-head' }, h('h2', {}, 'Atajo de Siri'), seg),
+      segTipo,
       h('p', { class: 'note' }, T.intro),
       det);
   };
@@ -537,6 +569,44 @@ function diagText() {
 }
 
 // Jalar hacia abajo para actualizar.
+// Deslizar desde el borde izquierdo hacia adentro = botón "<" (solo en las páginas que tienen regresar).
+function setupSwipeBack() {
+  const main = $('#main');
+  const EDGE = 28, TRIGGER = 90;
+  let x0 = null, y0 = 0, dx = 0, activo = false, t0 = 0;
+  const reset = (anim) => { main.style.transition = anim ? 'transform .25s cubic-bezier(.2,.8,.2,1), opacity .25s' : 'none'; main.style.transform = ''; main.style.opacity = ''; };
+  addEventListener('touchstart', (e) => {
+    x0 = null;
+    if (!SUB.has(page) || !sync.config || e.touches.length !== 1 || document.querySelector('.sheet-bg, .viewer, .lockscreen')) return;
+    const t = e.touches[0];
+    if (t.clientX > EDGE) return;
+    x0 = t.clientX; y0 = t.clientY; dx = 0; activo = false; t0 = Date.now();
+  }, { passive: true });
+  addEventListener('touchmove', (e) => {
+    if (x0 == null) return;
+    const t = e.touches[0];
+    const d = t.clientX - x0, dy = Math.abs(t.clientY - y0);
+    if (!activo && (d < 8 || dy > d)) { if (dy > 12 || d < -4) x0 = null; return; }
+    activo = true;
+    dx = Math.max(0, d);
+    if (e.cancelable) e.preventDefault();
+    main.style.transition = 'none';
+    main.style.transform = `translateX(${dx * 0.9}px)`;
+    main.style.opacity = String(Math.max(0.4, 1 - dx / (innerWidth * 1.4)));
+  }, { passive: false });
+  addEventListener('touchend', () => {
+    if (x0 == null || !activo) { x0 = null; return; }
+    x0 = null;
+    const rapido = dx > 40 && Date.now() - t0 < 250;
+    if (dx >= TRIGGER || rapido) {
+      main.style.transition = 'transform .18s ease-out, opacity .18s';
+      main.style.transform = `translateX(${innerWidth}px)`; main.style.opacity = '0';
+      setTimeout(() => { reset(false); go(back); }, 170);
+    } else reset(true);
+  });
+  addEventListener('touchcancel', () => { if (x0 != null) { x0 = null; reset(true); } });
+}
+
 function setupPullToRefresh() {
   const ind = $('#ptr');
   const main = $('#main');
@@ -630,6 +700,7 @@ async function start() {
   addEventListener('orientationchange', () => setTimeout(fixBottom, 300));
   setTimeout(fixBottom, 500);
   setupPullToRefresh();
+  setupSwipeBack();
   window.addEventListener('online', () => sync.sync());
   window.addEventListener('focus', () => sync.sync());
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync.sync(); });

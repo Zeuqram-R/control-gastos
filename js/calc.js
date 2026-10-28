@@ -408,7 +408,7 @@ export function listaCompras(compras, cat, eventos, lista, hoy) {
     if (p && p.ultima >= d10(l.fecha)) continue; // ya se compró después de pedirlo
     const key = l.clave || `manual:${l.id}`;
     put(key, {
-      key, clave: l.clave || '', pedidoId: l.id, producto: p ? p.producto : l.texto,
+      key, clave: l.clave || '', pedidoId: l.id, cantidad: l.cantidad || '', producto: p ? p.producto : l.texto,
       mejor_super: p ? p.mejor_super : '', mejor_precio: p ? p.mejor_precio : null, unidad: p ? p.unidad : '', dueno: p ? p.dueno : '',
       pr: 2, motivo: 'pedido', detalle: `Lo pidió ${l.por || 'alguien'}${l.cantidad ? ` · ${l.cantidad}` : ''}${l.nota ? ` · ${l.nota}` : ''}`, fecha: d10(l.fecha),
     });
@@ -562,4 +562,23 @@ export function negocioInfo(D, mes) {
     porCat: [...groupBy(gm, (g) => g.categoria || 'Otros')].map(([c, l]) => ({ label: c, total: sum(l, (g) => g.monto) })).sort((a, b) => b.total - a.total),
     movs: [...vm.map((v) => ({ ...v, clase: 'venta' })), ...gm.map((g) => ({ ...g, clase: 'gasto' }))].sort((a, b) => b.fecha.localeCompare(a.fecha) || String(b.id).localeCompare(String(a.id))),
   };
+}
+
+// ¿Dónde sale más barata la lista? Con el último precio conocido de cada producto en cada lugar.
+export function compararLista(items, compras) {
+  const precios = new Map(); // clave → Map(lugar → precio)
+  for (const r of compras.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))) {
+    if (!r.clave) continue;
+    if (!precios.has(r.clave)) precios.set(r.clave, new Map());
+    precios.get(r.clave).set(r.supermercado, Number(r.precio_unitario) || 0);
+  }
+  const conPrecio = items.filter((r) => r.clave && precios.has(r.clave));
+  const lugares = [...new Set(conPrecio.flatMap((r) => [...precios.get(r.clave).keys()]))];
+  const porLugar = lugares.map((l) => {
+    const tiene = conPrecio.filter((r) => precios.get(r.clave).has(l));
+    return { lugar: l, total: sum(tiene, (r) => precios.get(r.clave).get(l)), n: tiene.length, faltan: conPrecio.filter((r) => !precios.get(r.clave).has(l)).map((r) => r.producto) };
+  }).sort((a, b) => b.n - a.n || a.total - b.total);
+  const mejor = sum(conPrecio, (r) => Math.min(...precios.get(r.clave).values()));
+  const lugaresMejor = new Set(conPrecio.map((r) => { const m = precios.get(r.clave); return [...m].sort((a, b) => a[1] - b[1])[0][0]; }));
+  return { porLugar, conPrecio: conPrecio.length, sinPrecio: items.length - conPrecio.length, mejor, lugaresMejor: [...lugaresMejor] };
 }

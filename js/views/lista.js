@@ -71,9 +71,30 @@ export function viewLista(ctx) {
     grupos.get(k).push(r);
   }
 
+  // Compartir por WhatsApp, ordenada por lugar.
+  const textoLista = () => {
+    const lineas = [`🛒 Lista del súper (${dayShort(hoy)})`];
+    for (const [store, list] of grupos) {
+      const t = C.sum(list, (r) => r.mejor_precio);
+      lineas.push('', `*${store}*${t ? ` (≈ ${crc(t)})` : ''}`);
+      for (const r of list) lineas.push(`• ${r.producto}${r.cantidad ? ` — ${r.cantidad}` : ''}`);
+    }
+    if (total) lineas.push('', `Total aprox.: ${crc(total)}`);
+    return lineas.join('\n');
+  };
+  const compartir = async (via) => {
+    const txt = textoLista();
+    if (via === 'nativo' && navigator.share) { try { await navigator.share({ text: txt }); } catch (e) { /* cancelado */ } return; }
+    window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+  };
+  const cmp = pendientes.length ? C.compararLista(pendientes, compras) : null;
+
   return [
     h('section', { class: 'card' },
-      h('h2', {}, 'Lista para el próximo súper'),
+      h('div', { class: 'card-head' }, h('h2', {}, 'Lista para el próximo súper'),
+        pendientes.length ? h('div', { class: 'head-r' },
+          h('button', { type: 'button', class: 'btn sm wa', onclick: () => compartir('wa') }, 'WhatsApp'),
+          navigator.share ? h('button', { type: 'button', class: 'btn secondary sm', 'aria-label': 'Compartir de otra forma', onclick: () => compartir('nativo') }, 'Compartir') : null) : null),
       h('p', { class: 'note' }, rows.length
         ? `${pendientes.length} por comprar${pendientes.length ? ` · unos ${crc(total)} con los mejores precios conocidos` : ''}${marcados.length ? ` · ${marcados.length} tachado(s)` : ''}. Tocá un producto para tacharlo; Ali y vos ven lo mismo.`
         : 'Por ahora no falta nada que yo sepa. Agregá lo que necesitás aquí abajo.'),
@@ -82,6 +103,17 @@ export function viewLista(ctx) {
     ...[...grupos].map(([store, list]) => h('section', { class: 'card' },
       h('h3', { class: 'lst-store' }, h('span', {}, store), C.sum(list, (r) => r.mejor_precio) ? h('span', { class: 'muted' }, `≈ ${crc(C.sum(list, (r) => r.mejor_precio))}`) : null),
       h('ul', { class: 'lst' }, list.map(row)))),
+    cmp && cmp.porLugar.length ? h('section', { class: 'card' },
+      h('h2', {}, '¿Dónde sale más barata?'),
+      h('p', { class: 'note' }, `Con los últimos precios conocidos de ${cmp.conPrecio} producto(s)${cmp.sinPrecio ? ` (${cmp.sinPrecio} sin precio todavía)` : ''}, una unidad de cada uno.`),
+      h('ul', { class: 'rows' },
+        cmp.porLugar.map((l, i) => h('li', {},
+          h('div', { class: 'main' }, `Todo en ${l.lugar}`, h('span', { class: 'sub' }, l.faltan.length ? `Tiene ${l.n} de ${cmp.conPrecio}; no conocemos precio ahí de: ${l.faltan.slice(0, 3).join(', ')}${l.faltan.length > 3 ? '…' : ''}` : `Tiene precio de todo${i === 0 && cmp.porLugar.length > 1 ? ' · la mejor opción en un solo lugar' : ''}`)),
+          h('span', { class: 'amt' }, crc(l.total)))),
+        cmp.lugaresMejor.length > 1 ? h('li', {},
+          h('div', { class: 'main' }, 'Cada cosa donde sale más barata', h('span', { class: 'sub' }, `Repartido en ${cmp.lugaresMejor.join(', ')}`)),
+          h('span', { class: 'amt', style: { color: 'var(--ok)' } }, crc(cmp.mejor))) : null),
+      cmp.porLugar.length === 1 ? h('p', { class: 'note', style: { margin: '8px 0 0' } }, 'Por ahora solo conocemos precios de un lugar. Con facturas de otros súper, el chino o la feria, aquí se comparan solos.') : null) : null,
     marcados.length ? h('section', { class: 'card' },
       h('h3', { class: 'lst-store' }, h('span', {}, `Tachado (${marcados.length})`),
         h('button', { type: 'button', class: 'btn secondary sm', onclick: limpiar }, 'Limpiar tachados')),

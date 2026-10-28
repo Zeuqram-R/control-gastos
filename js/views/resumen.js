@@ -10,10 +10,11 @@ import { abrirPresupuestos } from '../sugerencias.js';
 const state = { movBuscar: '', buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0, qOff: 0 };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
 
-let openCat = null;
+let openCat = null, irAnio = null;
 export function viewResumen(ctx) {
   const { sync } = ctx;
   openCat = ctx.openCategoria;
+  irAnio = () => ctx.go('anio');
   const D = Object.fromEntries(['gastos', 'cuentas', 'compras', 'productos', 'eventos', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas', 'abonos', 'metas']
     .map((k) => [k, sync.data(k)]));
   const hoy = todayCR();
@@ -25,6 +26,9 @@ export function viewResumen(ctx) {
       [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['metas', 'Metas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Movimientos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
         .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(`r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
     secFacturas(ctx),
+    ['12', '01'].includes(hoy.slice(5, 7)) ? h('section', { class: 'card fac-quick tap-card sec anio-card', role: 'button', onclick: () => ctx.go('anio') },
+      h('div', { class: 'main' }, h('b', {}, `✨ Tu ${hoy.slice(5, 7) === '01' ? Number(hoy.slice(0, 4)) - 1 : hoy.slice(0, 4)}`), h('span', { class: 'sub' }, 'En qué se fue la plata, cuánto ahorraron, lo que más compraron…')),
+      h('span', { class: 'chev big' }, '›')) : null,
     state.qOff > 0 ? secProyeccion(ctx, D, hoy) : secQuincena(ctx, D, B, hoy),
     secCuentas(ctx, D, B, hoy),
     secMetas(ctx, D, hoy),
@@ -264,7 +268,8 @@ function comparativo(movs, nomMes) {
         n >= 2 ? (() => { const d = c.valores[n - 1] - c.valores[n - 2]; return d ? h('span', { class: `cmp-d ${d > 0 ? 'up' : 'down'}` }, `${d > 0 ? '▲' : '▼'} ${crc(Math.abs(d))}`) : null; })() : null),
       c.valores.map((v, i) => h('div', { class: 'cmp-row', title: `${etiqueta(M.meses[i])}: ${crc(v)}` },
         h('div', { class: 'cmp-fill', style: { width: `${(v / max) * 100}%`, background: tono(i) } })))))),
-    M.meses.includes(hoyMes) && n >= 2 ? h('p', { class: 'note', style: { margin: '10px 0 0' } }, '* Mes en curso: todavía no está completo.') : null);
+    M.meses.includes(hoyMes) && n >= 2 ? h('p', { class: 'note', style: { margin: '10px 0 0' } }, '* Mes en curso: todavía no está completo.') : null,
+    h('button', { type: 'button', class: 'link-more', onclick: () => irAnio && irAnio() }, `Ver el año completo ›`));
 }
 
 function secVencimientos(ctx, cat, eventos, hoy) {
