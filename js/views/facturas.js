@@ -102,7 +102,7 @@ export function viewFacturas(ctx) {
         enCola.map((u) => h('li', {}, h('span', { class: 'hdot wait' }), h('div', { class: 'main' }, u.meta?.resumen || 'Factura', h('span', { class: 'sub' }, `En este aparato, esperando internet · ${ago(u.at)}`)))),
         enBandeja.map((id) => h('li', {}, h('span', { class: 'hdot work' }), h('div', { class: 'main' }, `Factura ${id.slice(0, 10)}`, h('span', { class: 'sub' }, 'En GitHub, Claude la está procesando (unos minutos)')))),
         procesadas.slice(0, 20).map((f) => h('li', {},
-          h('span', { class: `hdot ${f.estado === 'error' ? 'bad' : f.estado === 'con preguntas' ? 'work' : 'ok'}` }),
+          h('span', { class: `hdot ${f.estado === 'error' ? 'bad' : f.estado === 'con preguntas' ? 'work' : f.estado === 'duplicada' ? 'wait' : 'ok'}` }),
           h('div', { class: 'main' }, `${f.lugar || 'Factura'}${f.fecha ? ` · ${dayShort(f.fecha)}` : ''}`,
             h('span', { class: 'sub' }, [f.articulos ? `${f.articulos} artículos` : null, f.estado === 'con preguntas' ? 'tiene preguntas' : f.estado === 'error' ? (f.resumen || 'no se pudo leer') : f.resumen].filter(Boolean).join(' · '))),
           f.total != null ? h('span', { class: 'amt' }, crc(f.total)) : null))) : empty('Todavía no se ha subido ninguna factura desde la app.')),
