@@ -1,7 +1,8 @@
+import { respaldar } from './respaldo.js';
 import { createSync } from './sync.js';
 import { GitHubError } from './github.js';
 
-import { $, h, ago, privacy, preloadPhotos } from './ui.js';
+import { $, h, ago, privacy, preloadPhotos, todayCR } from './ui.js';
 import { prefs } from './prefs.js';
 import { lock, iniciarCandado } from './lock.js';
 import { push } from './push.js';
@@ -12,7 +13,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.8';
+const APP_VERSION = '5.9';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -352,6 +353,13 @@ function viewAjustes() {
       h('p', { class: 'note', style: { marginTop: '12px', marginBottom: '0' } }, 'Para cambiarlo: Desconectar (abajo), pegar el token nuevo y Conectar.')),
 
     syncCard(),
+
+    h('section', { class: 'card' },
+      h('h2', {}, 'Respaldo'),
+      h('p', { class: 'note' }, 'Bajá una copia de todos los datos. El Excel trae una hoja por cada cosa (gastos, recurrentes, deudas, compras…); el JSON es la copia exacta, por si algún día hay que restaurar.'),
+      h('div', { class: 'btn-col' },
+        h('button', { class: 'btn block', type: 'button', onclick: () => { respaldar(sync, 'xlsx', todayCR()); toast('Preparando el Excel…'); } }, 'Descargar Excel'),
+        h('button', { class: 'btn secondary block', type: 'button', onclick: () => respaldar(sync, 'json', todayCR()) }, 'Descargar copia completa (JSON)'))),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Almacenamiento'),

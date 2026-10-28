@@ -229,32 +229,88 @@ export function fondoAhorro(D) {
   return { cuentas: fs, total: sum(fs, (c) => (c.moneda === 'USD' ? (tc ? Math.round(Number(c.saldo) * Number(tc.compra)) : 0) : Number(c.saldo) || 0)) };
 }
 
-export function balanceQuincena(D, hoy) {
-  const q = quincenaDe(hoy);
-  const tc = ultimoTC(D.tipo_cambio);
+// Metas de ahorro: cuánto falta, cuántas quincenas quedan y cuánto apartar en cada una.
+export function metasInfo(D, hoy) {
+  const q0 = quincenaDe(hoy);
+  return (D.metas || []).filter((m) => m.estado !== 'archivada').map((m) => {
+    const aportes = (m.aportes || []).slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    const ahorrado = sum(aportes, (a) => Number(a.monto) || 0);
+    const meta = Number(m.monto) || 0;
+    const falta = Math.max(meta - ahorrado, 0);
+    // Quincenas desde la actual hasta la de la fecha meta (incluidas). Lo apartado en la actual ya cuenta.
+    const qs = [];
+    for (let q = q0; m.fecha && q.inicio <= m.fecha; q = quincenaDe(addDays(q.fin, 1))) qs.push(q);
+    const enActual = sum(aportes.filter((a) => a.fecha >= q0.inicio && a.fecha <= q0.fin), (a) => Number(a.monto) || 0);
+    const n = Math.max(qs.length, 1);
+    const porQ = falta ? Math.ceil((falta + enActual) / n) : 0;
+    const estaQ = Math.max(porQ - enActual, 0);
+    return { ...m, aportes, ahorrado, meta, falta, quincenas: qs, n: qs.length, porQ, estaQ, enActual, lista: falta === 0, vencida: m.fecha && m.fecha < hoy && falta > 0, pct: meta ? Math.min(ahorrado / meta, 1) : 0 };
+  });
+}
+
+// Primera quincena con datos (desde ahí se arrastra lo que sobra de una quincena a la siguiente).
+function inicioDatos(D) {
+  const fechas = [...(D.saldos || []).map((x) => d10(x.fecha)), ...movimientos(D).map((m) => m.fecha)].filter(Boolean).sort();
+  return fechas.length ? quincenaDe(fechas[0]).inicio : null;
+}
+
+// La plata que de verdad entró y salió del salario en una quincena (sin contar lo pendiente).
+function cajaQ(D, q, tc, deCuenta) {
   const ing = ingresosNetos(D.ingresos).filter((r) => r.quincena === q.numero);
   const agui = aguinaldosEn(D.ingresos, q);
   const neto = sum(ing, (r) => r.neto) + sum(agui, (r) => r.neto), bruto = sum(ing, (r) => r.bruto);
-  const saldos = saldosCRC(D.saldos, tc);
-  const saldo = sum(saldos, (s) => s.crc);
-  const pagRec = new Map(D.pagos_recurrentes.map((p) => [p.id, p]));
-  const pagDeu = new Map(D.pagos_deudas.map((p) => [p.id, p]));
+  // Saldos a favor (plata que había o que entró aparte, como el préstamo): solo en la quincena de su fecha.
+  const saldos = saldosCRC(D.saldos, tc).filter((x) => { const f = d10(x.fecha); return !f || (f >= q.inicio && f <= q.fin); });
+  const saldo = sum(saldos, (x) => x.crc);
+  const movs = movimientos(D).filter((m) => m.fecha >= q.inicio && m.fecha <= q.fin);
+  const wink = sum(movs.filter((m) => m.fuente === 'Wink'), (m) => m.monto);
+  const otraCuenta = sum(movs.filter((m) => m.fuente !== 'Wink' && deCuenta.has(m.fuente)), (m) => m.monto);
+  const gastado = sum(movs, (m) => m.monto);
+  const aportes = (D.metas || []).flatMap((m) => (m.aportes || []).filter((x) => x.fecha >= q.inicio && x.fecha <= q.fin && (x.fuente || 'Salario') !== 'Fondo').map((x) => ({ ...x, meta: m.nombre })));
+  const apartado = sum(aportes, (x) => Number(x.monto) || 0);
+  return { ing, agui, neto, bruto, saldos, saldo, movs, wink, otraCuenta, gastado, aportes, apartado,
+    neta: neto + saldo - (gastado - wink - otraCuenta) - apartado };
+}
+
+export function balanceQuincena(D, hoy) {
+  const q = quincenaDe(hoy);
+  const tc = ultimoTC(D.tipo_cambio);
   // Lo que sale de otras cuentas (p. ej. Bank of America) no cuenta contra el salario de la quincena.
   const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente).filter(Boolean));
+  const ini = inicioDatos(D);
+  // Lo que sobró de las quincenas anteriores (desde la primera con datos).
+  let arrastre = 0, prevQ = null;
+  if (ini && q.inicio > ini) {
+    const qs = [];
+    for (let x = quincenaDe(ini); x.inicio < q.inicio; x = quincenaDe(addDays(x.fin, 1))) qs.push(x);
+    for (const x of qs) arrastre += cajaQ(D, x, tc, deCuenta).neta;
+    prevQ = qs[qs.length - 1];
+  }
+  const K = cajaQ(D, q, tc, deCuenta);
+  const pagRec = new Map(D.pagos_recurrentes.map((p) => [p.id, p]));
+  const pagDeu = new Map(D.pagos_deudas.map((p) => [p.id, p]));
   const activos = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado) && !deCuenta.has(f.fuente));
   const porPagar = activos.map((f) => ({ ...f, prox: proximoPago(f, hoy) }))
     .filter((f) => f.prox && f.prox <= q.fin && !pagRec.has(`${f.id}_${f.prox}`) && aplica(f, D.cuentas || []));
+  // Atrasados: lo que vencía en la quincena anterior (o antes en esta) y no se tachó.
+  if (prevQ || hoy > q.inicio) {
+    const desde = prevQ ? prevQ.inicio : q.inicio;
+    for (const f of activos) {
+      for (const fecha of fechasEntre(f, desde, addDays(hoy, -1))) {
+        if (ini && fecha < ini) continue;
+        if (!pagRec.has(`${f.id}_${fecha}`) && aplica(f, D.cuentas || []) && !porPagar.some((x) => x.id === f.id && x.prox === fecha)) porPagar.push({ ...f, prox: fecha, atrasado: true });
+      }
+    }
+    porPagar.sort((x, y) => x.prox.localeCompare(y.prox));
+  }
   const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc);
   const deudasQ = deudas.filter((d) => !pagDeu.has(d.id) && d.direccion === 'debemos' && d.fecha_limite && d10(d.fecha_limite) <= q.fin);
-  const movs = movimientos(D).filter((m) => m.fecha >= q.inicio && m.fecha <= q.fin);
-  const tachado = sum(movs.filter((m) => m.tipo !== 'gasto'), (m) => m.monto);
-  const wink = sum(movs.filter((m) => m.fuente === 'Wink'), (m) => m.monto);
-  const gastado = sum(movs, (m) => m.monto);
+  const tachado = sum(K.movs.filter((m) => m.tipo !== 'gasto'), (m) => m.monto);
   const fijos = sum(porPagar, (f) => f.monto_crc), deu = sum(deudasQ, (d) => d.crc);
   return {
-    q, tc, ing, agui, neto, bruto, movs, saldos, saldo, porPagar, deudasQ, fijos, deu, tachado, gastado, wink,
+    q, tc, ...K, arrastre, prevQ, porPagar, deudasQ, fijos, deu, tachado,
     sinFecha: activos.filter((f) => !f.dia).length,
-    queda: neto + saldo - fijos - deu - (gastado - wink),
+    queda: arrastre + K.neta - fijos - deu,
   };
 }
 
@@ -435,6 +491,7 @@ export function proyeccion(D, hoy, n = 12) {
   const estVar = cerradas.length ? Math.round(sum(cerradas) / cerradas.length) : variablesDe(B.q.inicio, B.q.fin);
   const estBase = cerradas.length ? `promedio de ${cerradas.length} quincena(s)` : 'lo que va de esta quincena';
   const netos = ingresosNetos(D.ingresos);
+  const metas = metasInfo(D, hoy);
   const out = [];
   let prev = { q: B.q, queda: B.queda, wink: sum(movs.filter((m) => m.fuente === 'Wink' && m.fecha >= B.q.inicio && m.fecha <= B.q.fin), (m) => m.monto) };
   for (let i = 0; i < n; i++) {
@@ -451,6 +508,7 @@ export function proyeccion(D, hoy, n = 12) {
       const fl = d10(d.fecha_limite);
       if (fl && fl >= q.inicio && fl <= q.fin) pagos.push({ fecha: fl, nombre: `${d.concepto} (${d.persona})`, monto: d.crc || 0, quien: d.de_quien, tipo: 'deuda' });
     }
+    for (const m of metas) if (m.falta && m.fecha && q.inicio <= m.fecha) pagos.push({ fecha: q.inicio, nombre: `Apartar para «${m.nombre}»`, monto: m.porQ, quien: m.quien || 'Ambos', tipo: 'meta' });
     if (prev.wink) pagos.push({ fecha: q.inicio, nombre: 'Tarjeta Wink (lo usado la quincena anterior)', monto: prev.wink, quien: 'Ambos', tipo: 'tarjeta' });
     pagos.sort((a, b) => a.fecha.localeCompare(b.fecha));
     const porPagar = sum(pagos, (p) => p.monto);

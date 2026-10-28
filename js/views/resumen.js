@@ -3,6 +3,8 @@ import { h, privacy, addDays, crc, usd, pct, todayCR, dayShort, daysBetween, MES
 import * as C from '../calc.js';
 import { preguntasAbiertas } from './facturas.js';
 import { conFuente } from '../fuente.js';
+import { abrirGasto } from '../gasto.js';
+import { abrirHoja } from '../fuente.js';
 
 const state = { buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0, qOff: 0 };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
@@ -11,7 +13,7 @@ let openCat = null;
 export function viewResumen(ctx) {
   const { sync } = ctx;
   openCat = ctx.openCategoria;
-  const D = Object.fromEntries(['gastos', 'cuentas', 'compras', 'productos', 'eventos', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas', 'abonos']
+  const D = Object.fromEntries(['gastos', 'cuentas', 'compras', 'productos', 'eventos', 'presupuestos', 'ingresos', 'saldos', 'tipo_cambio', 'recurrentes', 'deudas', 'pagos_recurrentes', 'pagos_deudas', 'abonos', 'metas']
     .map((k) => [k, sync.data(k)]));
   const hoy = todayCR();
   const B = C.balanceQuincena(D, hoy);
@@ -19,11 +21,12 @@ export function viewResumen(ctx) {
 
   return [
     h('nav', { class: 'chips', 'aria-label': 'Ir a' },
-      [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Movimientos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
+      [['q', 'Quincena'], ['cuentas', 'Cuentas'], ['metas', 'Metas'], ['tipos', 'Por tipo'], ['mes', 'El mes'], ['venc', 'Perecederos'], ['gastos', 'Movimientos'], ['super', 'Súper'], ['iva', 'IVA'], ['compras', 'Compras']]
         .map(([id, t]) => h('button', { type: 'button', class: 'chip', onclick: () => document.getElementById(`r-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, t))),
     secFacturas(ctx),
     state.qOff > 0 ? secProyeccion(ctx, D, hoy) : secQuincena(ctx, D, B, hoy),
     secCuentas(ctx, D, B, hoy),
+    secMetas(ctx, D, hoy),
     secTipos(D, B, hoy),
     secMes(D),
     secVencimientos(ctx, cat, D.eventos, hoy),
@@ -74,7 +77,7 @@ function secProyeccion(ctx, D, hoy) {
           grupos: [{ titulo: 'Entra en esta quincena', signo: '+', total: r.neto, lineas: ingLineas(r.ing, r.agui), vacio: 'No hay salario anotado para esta quincena.' }], total: r.neto })),
         conFuente(stat('Por pagar', crc(r.porPagar), `${r.pagos.length} pago(s) con fecha${r.pagos.some((p) => p.tipo === 'tarjeta') ? ' · incluye la tarjeta Wink' : ''}`), () => ({
           titulo: 'Por pagar',
-          grupos: [{ titulo: `Pagos del ${dayShort(r.q.inicio)} al ${dayShort(r.q.fin)}`, signo: '−', total: r.porPagar, lineas: r.pagos.map((i) => ({ nombre: i.nombre, sub: `${dayShort(i.fecha)} · ${i.quien || 'Ambos'}${i.tipo === 'deuda' ? ' · deuda' : i.tipo === 'tarjeta' ? ' · tarjeta' : ' · recurrente'}`, monto: i.monto })), vacio: 'No hay pagos con fecha en esta quincena.' }],
+          grupos: [{ titulo: `Pagos del ${dayShort(r.q.inicio)} al ${dayShort(r.q.fin)}`, signo: '−', total: r.porPagar, lineas: r.pagos.map((i) => ({ nombre: i.nombre, sub: `${dayShort(i.fecha)} · ${i.quien || 'Ambos'}${({ deuda: ' · deuda', tarjeta: ' · tarjeta', meta: ' · meta de ahorro' })[i.tipo] || ' · recurrente'}`, monto: i.monto })), vacio: 'No hay pagos con fecha en esta quincena.' }],
           nota: 'Recurrentes que vencen en estas fechas, deudas con fecha límite aquí y lo usado con Wink la quincena anterior. Lo que sale de Bank of America no se cuenta aquí.', total: r.porPagar })),
         conFuente(stat('Día a día (estimado)', crc(r.estVar), `Súper, salidas, transporte… (${r.estBase})`), () => ({
           titulo: 'Día a día (estimado)',
@@ -102,20 +105,24 @@ function secProyeccion(ctx, D, hoy) {
 
 function secQuincena(ctx, D, B, hoy) {
   const { q } = B;
+  const otraCta = new Set((D.cuentas || []).map((c) => c.fuente).filter(Boolean));
   const dia = Math.min(daysBetween(q.inicio, hoy) + 1, q.dias);
-  const ingSub = `Salario de ${B.ing.map((r) => r.persona).join(' + ') || '—'} ${crc(B.neto - C.sum(B.agui, (a) => a.neto))} neto (${crc(B.bruto)} bruto − CCSS)${B.agui.length ? ` + ${B.agui.map(aguiTxt).join(' + ')}` : ''}`
+  const entra = B.arrastre + B.neto + B.saldo;
+  const deSalario = (m) => m.fuente !== 'Wink' && !otraCta.has(m.fuente);
+  const ingSub = (B.arrastre ? `Sobra de la anterior ${B.arrastre < 0 ? '−' : ''}${crc(Math.abs(B.arrastre))} + ` : '') + `Salario de ${B.ing.map((r) => r.persona).join(' + ') || '—'} ${crc(B.neto - C.sum(B.agui, (a) => a.neto))} neto (${crc(B.bruto)} bruto − CCSS)${B.agui.length ? ` + ${B.agui.map(aguiTxt).join(' + ')}` : ''}`
     + (B.saldo ? ` + saldo ${B.saldos.map((s) => (s.moneda === 'USD' ? `${usd(s.monto)} ≈ ${crc(s.crc)}` : `${crc(s.monto)}${s.donde && s.donde !== 'Salario' ? ` (${s.donde.toLowerCase()})` : ''}`)).join(' + ')}` : '');
   const items = [
-    ...B.porPagar.map((f) => ({ fecha: f.prox, nombre: f.nombre, monto: f.monto_crc, extra: f.moneda === 'USD' ? usd(f.monto) : '', quien: f.quien })),
+    ...B.porPagar.map((f) => ({ fecha: f.prox, nombre: f.atrasado ? `${f.nombre} (atrasado)` : f.nombre, monto: f.monto_crc, extra: f.moneda === 'USD' ? usd(f.monto) : '', quien: f.quien })),
     ...B.deudasQ.map((d) => ({ fecha: String(d.fecha_limite).slice(0, 10), nombre: `${d.concepto} (${d.persona})`, monto: d.crc, extra: d.moneda === 'USD' ? usd(d.monto) : '', quien: d.de_quien })),
   ].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const gen = genCard(D, B, 'General', hoy, false);
-  const gIng = { titulo: 'Ingreso + saldo a favor', signo: '+', total: B.neto + B.saldo, lineas: [
+  const gIng = { titulo: 'Ingreso + saldo a favor', signo: '+', total: entra, lineas: [
+    B.arrastre ? { nombre: 'Sobra de la quincena anterior', sub: B.prevQ ? `Lo que quedó sin gastar hasta el ${dayShort(B.prevQ.fin)} (sin contar lo que estaba pendiente)` : '', monto: B.arrastre } : null,
     ...ingLineas(B.ing, B.agui),
     ...B.saldos.map((s) => ({ nombre: `Saldo a favor${s.donde ? ` (${s.donde.toLowerCase()})` : ''}`, sub: [s.moneda === 'USD' ? `${usd(s.monto)} al tipo de cambio` : null, s.nota].filter(Boolean).join(' · '), monto: s.crc })),
-  ], vacio: 'No hay ingresos anotados para esta quincena.' };
+  ].filter(Boolean), vacio: 'No hay ingresos anotados para esta quincena.' };
   const gPagar = { titulo: `Por pagar hasta el ${dayShort(q.fin)}`, signo: '−', total: B.fijos + B.deu, lineas: items.map((i) => ({ nombre: i.nombre, sub: `${dayShort(i.fecha)}${i.extra ? ` · ${i.extra}` : ''} · ${i.quien || 'Ambos'}`, monto: i.monto })), vacio: 'Nada pendiente.' };
-  const gGastado = { titulo: 'Gastado del salario', signo: '−', total: B.gastado - B.wink, lineas: B.movs.filter((m) => m.fuente !== 'Wink').map(movLinea), vacio: 'Nada todavía.' };
+  const gGastado = { titulo: 'Gastado del salario', signo: '−', total: B.gastado - B.wink - B.otraCuenta, lineas: B.movs.filter(deSalario).map(movLinea), vacio: 'Nada todavía.' };
   return h('section', { id: 'r-q', class: 'sec' },
     qNav(ctx, `Quincena actual · ${dayShort(q.inicio)} – ${dayShort(q.fin)}`),
     h('div', { class: 'sec-head' },
@@ -123,16 +130,17 @@ function secQuincena(ctx, D, B, hoy) {
         + (B.tc ? ` Dólar: ${crc2(B.tc.venta)} venta · ${crc2(B.tc.compra)} compra (${dayShort(B.tc.fecha)}).` : ''))),
     h('div', { class: 'card' },
       h('div', { class: 'qgrid' },
-        conFuente(stat('Ingreso + saldo a favor', crc(B.neto + B.saldo), ingSub), () => ({ titulo: 'Ingreso + saldo a favor', grupos: [gIng], total: B.neto + B.saldo })),
+        conFuente(stat('Ingreso + saldo a favor', crc(entra), ingSub), () => ({ titulo: 'Ingreso + saldo a favor', grupos: [gIng], total: entra })),
         conFuente(stat('Por pagar', crc(B.fijos + B.deu), `${items.length} pago(s) hasta el ${dayShort(q.fin)}${B.sinFecha ? ` · ${B.sinFecha} sin fecha todavía` : ''}`), () => ({
           titulo: 'Por pagar', grupos: [gPagar],
           nota: `Recurrentes que vencen hasta el ${dayShort(q.fin)} y todavía no están tachados, más deudas con fecha límite hasta ese día. Lo que sale de Bank of America va aparte, en Cuentas.${B.sinFecha ? ` Hay ${B.sinFecha} recurrente(s) sin fecha que no se cuentan.` : ''}`, total: B.fijos + B.deu })),
-        conFuente(stat('Ya gastado', crc(B.gastado), (B.tachado ? `Incluye ${crc(B.tachado)} de pagos tachados · ` : '') + (B.wink ? `Salario ${crc(B.gastado - B.wink)} · Wink ${crc(B.wink)} (no sale de la quincena)` : 'Todo de salario')), () => ({
+        conFuente(stat('Ya gastado', crc(B.gastado), (B.tachado ? `Incluye ${crc(B.tachado)} de pagos tachados · ` : '') + (B.wink || B.otraCuenta ? [`Salario ${crc(B.gastado - B.wink - B.otraCuenta)}`, B.wink ? `Wink ${crc(B.wink)}` : null, B.otraCuenta ? `otras cuentas ${crc(B.otraCuenta)}` : null].filter(Boolean).join(' · ') + ' (solo el salario sale de la quincena)' : 'Todo de salario')), () => ({
           titulo: 'Ya gastado', nota: 'Gastos, pagos tachados y abonos desde el ' + dayShort(q.inicio) + '. Lo de Wink se muestra aparte porque se paga la quincena siguiente.',
-          grupos: [gGastado, B.wink ? { titulo: 'Con Wink (no sale de esta quincena)', total: B.wink, lineas: B.movs.filter((m) => m.fuente === 'Wink').map(movLinea) } : null], total: B.gastado })),
-        conFuente(privacy.hide ? stat('Queda libre', crc(0), 'Tocá el ojo de arriba para verlo') : stat('Queda libre', `${B.queda < 0 ? '−' : ''}${crc(Math.abs(B.queda))}`, B.queda < 0 ? `Falta para cubrir lo que hay que pagar hasta el ${dayShort(q.fin)}` : 'Libre para el resto de la quincena', B.queda < 0 ? 'var(--bad)' : 'var(--ok)'), () => ({
-          titulo: 'Queda libre', nota: 'Lo que entra, menos lo que falta pagar, menos lo ya gastado del salario.' + fondoNota(D, B.queda),
-          grupos: [gIng, gPagar, gGastado], total: B.queda }))),
+          grupos: [gGastado, B.wink ? { titulo: 'Con Wink (no sale de esta quincena)', total: B.wink, lineas: B.movs.filter((m) => m.fuente === 'Wink').map(movLinea) } : null,
+            B.otraCuenta ? { titulo: 'De otras cuentas (BofA…)', total: B.otraCuenta, lineas: B.movs.filter((m) => m.fuente !== 'Wink' && otraCta.has(m.fuente)).map(movLinea) } : null], total: B.gastado })),
+        conFuente(privacy.hide ? stat('Queda libre', crc(0), 'Tocá el ojo de arriba para verlo') : stat('Queda libre', `${B.queda < 0 ? '−' : ''}${crc(Math.abs(B.queda))}`, B.queda < 0 ? `Falta para cubrir lo que hay que pagar hasta el ${dayShort(q.fin)}` : `Libre para el resto de la quincena${B.apartado ? ` (ya sin los ${crc(B.apartado)} apartados)` : ''}`, B.queda < 0 ? 'var(--bad)' : 'var(--ok)'), () => ({
+          titulo: 'Queda libre', nota: 'Lo que sobró de la anterior y lo que entra, menos lo que falta pagar, menos lo ya gastado del salario.' + fondoNota(D, B.queda),
+          grupos: [gIng, gPagar, gGastado, B.apartado ? { titulo: 'Apartado para metas', signo: '−', total: B.apartado, lineas: B.aportes.map((a) => ({ nombre: a.meta, sub: `${dayShort(a.fecha)} · ${a.por || ''}`, monto: Number(a.monto) })) } : null], total: B.queda }))),
       h('p', { class: 'fx-hint' }, 'Tocá un número para ver de dónde sale.'),
       fondoLinea(D, B.queda),
       items.length ? h('details', { class: 'pp' },
@@ -259,7 +267,7 @@ function secGastos(ctx, movs) {
   const nav = (lbl, aria, delta, disabled) => h('button', { type: 'button', class: 'icon-btn', 'aria-label': aria, disabled: disabled || null, onclick: () => { state.movOff += delta; ctx.rerender(); } }, lbl);
   const modo = (k, t) => h('button', { type: 'button', 'aria-pressed': String(state.movModo === k), onclick: () => { if (state.movModo !== k) { state.movModo = k; state.movOff = 0; ctx.rerender(); } } }, t);
   return h('section', { id: 'r-gastos', class: 'card sec' },
-    h('div', { class: 'card-head' }, h('h2', {}, 'Movimientos'), h('div', { class: 'seg mini' }, modo('mes', 'Mes'), modo('semana', 'Semana'))),
+    h('div', { class: 'card-head' }, h('h2', {}, 'Movimientos'), h('div', { class: 'head-r' }, h('button', { type: 'button', class: 'btn secondary sm', onclick: () => abrirGasto(ctx) }, '+ Gasto'), h('div', { class: 'seg mini' }, modo('mes', 'Mes'), modo('semana', 'Semana')))),
     h('div', { class: 'per-nav' },
       nav('‹', state.movModo === 'mes' ? 'Mes anterior' : 'Semana anterior', 1, state.movOff >= periodos.length - 1),
       h('div', { class: 'per-t' }, h('b', {}, titulo), h('span', { class: 'sub' }, `${lista.length} movimiento(s) · ${crc(C.sum(lista, (g) => g.monto))}`)),
@@ -333,6 +341,89 @@ function secCompras(ctx, D) {
     h('p', { class: 'note' }, 'Cada artículo de cada factura, con su precio por kilo, litro o unidad.'),
     h('div', { class: 'field' }, input),
     list);
+}
+
+// ---------- Metas de ahorro ----------
+const metaSt = { nombre: '', monto: '', fecha: '' };
+function secMetas(ctx, D, hoy) {
+  const { sync, toast } = ctx;
+  const cfg = sync.config;
+  const metas = C.metasInfo(D, hoy);
+  const P = metas.some((m) => m.falta) ? C.proyeccion(D, hoy, 24) : null;
+  const nueva = () => {
+    const err = h('p', { class: 'error-msg', hidden: true });
+    const nom = h('input', { class: 'input', id: 'm-nombre', placeholder: 'Diciembre, colchón, viaje…', autocomplete: 'off' });
+    const mon = h('input', { class: 'input big-num', id: 'm-monto', inputmode: 'numeric', placeholder: '0', autocomplete: 'off' });
+    const fec = h('input', { class: 'input', id: 'm-fecha', type: 'date', min: addDays(hoy, 1) });
+    const cerrar = abrirHoja({ titulo: 'Nueva meta de ahorro', cuerpo: [
+      h('div', { class: 'field' }, h('label', { for: 'm-nombre' }, '¿Para qué?'), nom),
+      h('div', { class: 'field' }, h('label', { for: 'm-monto' }, 'Cuánto (₡)'), mon),
+      h('div', { class: 'field' }, h('label', { for: 'm-fecha' }, '¿Para cuándo?'), fec),
+      err,
+      h('button', { type: 'button', class: 'btn block', onclick: async () => {
+        const monto = Number(String(mon.value).replace(/[^\d]/g, ''));
+        if (!nom.value.trim() || !monto || !fec.value) { err.textContent = 'Llená los tres datos.'; err.hidden = false; return; }
+        await sync.mutate('metas', { kind: 'upsert', record: { id: `M${Date.now().toString(36)}`, nombre: nom.value.trim(), monto, fecha: fec.value, creada: hoy, por: cfg.persona, aportes: [] } }, `nueva meta: ${nom.value.trim()}`);
+        cerrar(); toast('Meta creada.');
+      } }, 'Crear meta'),
+      h('p', { class: 'note', style: { margin: '10px 0 0' } }, 'Te digo cuánto apartar cada quincena y lo resto en la proyección de las próximas.'),
+    ] });
+    setTimeout(() => nom.focus(), 250);
+  };
+  const apartar = (m) => {
+    const err = h('p', { class: 'error-msg', hidden: true });
+    const mon = h('input', { class: 'input big-num', id: 'm-aporte', inputmode: 'numeric', placeholder: String(m.estaQ || ''), autocomplete: 'off' });
+    let de = 'Salario';
+    const seg = h('div', { class: 'seg wrap' });
+    const opts = [['Salario', 'De la quincena'], ['Fondo', 'Ya estaba ahorrado']];
+    const paint = () => { for (const b of seg.children) b.setAttribute('aria-pressed', String(b.dataset.v === de)); };
+    for (const [v, t] of opts) seg.append(h('button', { type: 'button', 'data-v': v, onclick: () => { de = v; paint(); } }, t));
+    paint();
+    const cerrar = abrirHoja({ titulo: `Apartar para «${m.nombre}»`, cuerpo: [
+      h('div', { class: 'field' }, h('label', { for: 'm-aporte' }, 'Cuánto (₡)'), mon,
+        m.estaQ ? h('p', { class: 'note', style: { margin: '6px 0 0' } }, `Lo sugerido para esta quincena: ${crc(m.estaQ)}.`) : null),
+      h('div', { class: 'field' }, h('label', {}, '¿De dónde sale?'), seg,
+        h('p', { class: 'note', style: { margin: '6px 0 0' } }, 'Si sale de la quincena, se resta de lo que queda libre y se suma al fondo de ahorro.')),
+      err,
+      h('button', { type: 'button', class: 'btn block', onclick: async () => {
+        const monto = Number(String(mon.value || m.estaQ).replace(/[^\d]/g, ''));
+        if (!monto) { err.textContent = 'Poné cuánto.'; err.hidden = false; return; }
+        const aportes = [...(m.aportes || []), { fecha: hoy, monto, por: cfg.persona, fuente: de }];
+        await sync.mutate('metas', { kind: 'patch', record: { id: m.id, aportes } }, `aparta ${crc(monto)} para ${m.nombre}`);
+        const fondo = (sync.data('cuentas') || []).find((c) => c.tipo === 'ahorro' && c.moneda !== 'USD');
+        if (fondo && de === 'Salario') await sync.mutate('cuentas', { kind: 'patch', record: { id: fondo.id, saldo: (Number(fondo.saldo) || 0) + monto, fecha: hoy } }, `fondo +${crc(monto)}`);
+        cerrar(); toast(`Apartado ${crc(monto)} para «${m.nombre}».`);
+      } }, 'Apartar'),
+    ] });
+    setTimeout(() => mon.focus(), 250);
+  };
+  const quitar = (m) => {
+    abrirHoja({ titulo: `«${m.nombre}»`, cuerpo: [
+      h('ul', { class: 'rows' }, m.aportes.length ? m.aportes.slice().reverse().map((a) => h('li', {}, h('div', { class: 'main' }, `${dayShort(a.fecha)} · ${a.por || ''}`, h('span', { class: 'sub' }, a.fuente === 'Fondo' ? 'Ya estaba ahorrado' : 'De la quincena')), h('span', { class: 'amt' }, crc(Number(a.monto))))) : h('li', {}, h('div', { class: 'main' }, 'Todavía no se ha apartado nada.'))),
+      h('button', { type: 'button', class: 'btn secondary block', style: { marginTop: '14px' }, onclick: async () => {
+        document.querySelector('.sheet-bg')?.remove();
+        await sync.mutate('metas', { kind: 'patch', record: { id: m.id, estado: 'archivada' } }, `archiva meta ${m.nombre}`);
+        toast(`Meta «${m.nombre}» quitada.`, { label: 'Deshacer', fn: () => sync.mutate('metas', { kind: 'patch', record: { id: m.id, estado: 'activa' } }, `vuelve meta ${m.nombre}`) });
+      } }, m.lista ? 'Archivar (ya se cumplió)' : 'Quitar esta meta'),
+    ] });
+  };
+  return h('section', { id: 'r-metas', class: 'sec' },
+    h('div', { class: 'sec-head card-head' }, h('h2', {}, 'Metas de ahorro'), h('button', { type: 'button', class: 'btn secondary sm', onclick: nueva }, '+ Meta')),
+    metas.length ? metas.map((m) => {
+      // ¿La proyección se pone en negativo antes de la fecha meta (ya restando lo de la meta)?
+      const neg = P ? P.futuras.find((r) => r.q.inicio <= m.fecha && r.queda < 0) : null;
+      return h('div', { class: 'card meta' },
+        h('div', { class: 'cuenta-h' },
+          h('div', {}, h('b', {}, m.nombre), h('span', { class: 'sub' }, `${crc(m.meta)} para el ${dayShort(m.fecha)} ${m.fecha.slice(0, 4)}`)),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Más opciones', onclick: () => quitar(m) }, '⋯')),
+        h('div', { class: 'meta-bar' }, h('div', { style: { width: `${m.pct * 100}%` } })),
+        h('div', { class: 'qgrid' },
+          stat('Apartado', crc(m.ahorrado), `${Math.round(m.pct * 100)}% de la meta`),
+          m.lista ? stat('¡Listo!', '🎉', 'Ya se juntó todo') : stat(m.vencida ? 'Faltó' : 'Falta', crc(m.falta), m.vencida ? 'La fecha ya pasó' : `${m.n} quincena(s) hasta el ${dayShort(m.fecha)}`, m.vencida ? 'var(--bad)' : null),
+          m.lista || m.vencida ? null : stat('Esta quincena', crc(m.estaQ), m.enActual ? `Ya apartaron ${crc(m.enActual)}` : `Después, ${crc(m.porQ)} por quincena`),
+          m.lista || m.vencida ? null : stat('¿Alcanza?', neg ? 'Justo no' : 'Sí', neg ? `La quincena del ${dayShort(neg.q.inicio)} quedaría en −${crc(-neg.queda)}` : 'La proyección aguanta', neg ? 'var(--warn)' : 'var(--ok)')),
+        m.lista ? null : h('button', { type: 'button', class: 'btn block', style: { marginTop: '12px' }, onclick: () => apartar(m) }, 'Apartar'));
+    }) : h('div', { class: 'card' }, empty('Sin metas todavía. Creá una (por ejemplo, juntar para diciembre) y te digo cuánto apartar cada quincena.')));
 }
 
 // ---------- Cuentas (Bank of America y las que vengan) ----------
@@ -413,7 +504,9 @@ function secFacturas(ctx) {
   const cola = ctx.sync.uploads.length;
   return h('section', { class: 'card fac-quick' + (pend.length ? ' alert' : '') },
     h('div', { class: 'main' },
-      h('b', {}, pend.length ? `Claude tiene ${pend.length} pregunta${pend.length === 1 ? '' : 's'}` : 'Facturas'),
-      h('span', { class: 'sub' }, pend.length ? 'Sobre las últimas facturas. Tocá para contestar.' : cola ? `${cola} esperando internet para subir` : 'Subí la foto y Claude la anota.')),
-    h('button', { type: 'button', class: 'btn', onclick: () => ctx.go('facturas') }, pend.length ? 'Contestar' : 'Subir factura'));
+      h('b', {}, pend.length ? `Claude tiene ${pend.length} pregunta${pend.length === 1 ? '' : 's'}` : 'Anotar'),
+      h('span', { class: 'sub' }, pend.length ? 'Sobre las últimas facturas. Tocá para contestar.' : cola ? `${cola} esperando internet para subir` : 'Anotá un gasto o subí la foto de la factura.')),
+    h('div', { class: 'fac-btns' },
+      h('button', { type: 'button', class: 'btn secondary', onclick: () => abrirGasto(ctx) }, '+ Gasto'),
+      h('button', { type: 'button', class: 'btn', onclick: () => ctx.go('facturas') }, pend.length ? 'Contestar' : 'Factura')));
 }

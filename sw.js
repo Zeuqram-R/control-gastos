@@ -1,6 +1,6 @@
 // Guarda la app en el dispositivo para que abra sin internet.
 // Los datos no pasan por aquí: viven en IndexedDB y se sincronizan con GitHub desde la app.
-const VERSION = 'v5-2026-10-27i';
+const VERSION = 'v5-2026-10-27j';
 const SHELL = [
   './',
   './index.html',
@@ -13,6 +13,8 @@ const SHELL = [
   './js/prefs.js',
   './js/lock.js',
   './js/fuente.js',
+  './js/gasto.js',
+  './js/respaldo.js',
   './js/push.js',
   './js/calc.js',
   './js/views/resumen.js',

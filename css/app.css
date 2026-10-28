@@ -507,3 +507,11 @@ html.locked #app { filter: blur(18px); pointer-events: none; }
 .fondo-l { display: flex; justify-content: space-between; gap: 10px; margin: 10px 0 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 14px; color: var(--muted); }
 .fondo-l b { color: var(--fg); }
 .proy-total.fx .lbl { font-size: inherit; color: inherit; text-transform: none; letter-spacing: 0; }
+.fac-btns { display: flex; gap: 8px; flex-shrink: 0; }
+.head-r { display: flex; gap: 8px; align-items: center; }
+.big-num { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sheet .field { margin-bottom: 14px; }
+.sheet .row-add { display: flex; gap: 8px; align-items: center; }
+.sheet .row-add .input { flex: 1; min-width: 0; }
+.meta-bar { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; margin: 12px 0 4px; }
+.meta-bar > div { height: 100%; background: var(--ok); border-radius: 6px; }

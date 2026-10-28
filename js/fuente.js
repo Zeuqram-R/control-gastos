@@ -21,26 +21,33 @@ const money = (v, signo) => {
   return `${signo || (neg ? '−' : '')}${crc(Math.abs(v))}`;
 };
 
-export function abrirFuente({ titulo, nota, grupos = [], total, totalLbl }) {
+// Hoja que sube desde abajo (sirve para el detalle de los totales y para formularios).
+export function abrirHoja({ titulo, kicker, cuerpo, onClose }) {
   document.querySelector('.sheet-bg')?.remove();
-  const cerrar = () => { bg.classList.add('out'); setTimeout(() => bg.remove(), 180); document.removeEventListener('keydown', esc); };
+  const cerrar = () => { bg.classList.add('out'); setTimeout(() => bg.remove(), 180); document.removeEventListener('keydown', esc); onClose && onClose(); };
   const esc = (e) => { if (e.key === 'Escape') cerrar(); };
   const bg = h('div', { class: 'sheet-bg no-ptr', onclick: (e) => { if (e.target === bg) cerrar(); } },
-    h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': `De dónde sale: ${titulo}` },
+    h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo },
       h('div', { class: 'sheet-h' },
-        h('div', {}, h('span', { class: 'sheet-k' }, '¿De dónde sale?'), h('b', {}, titulo)),
+        h('div', {}, kicker ? h('span', { class: 'sheet-k' }, kicker) : null, h('b', {}, titulo)),
         h('button', { type: 'button', class: 'x-btn', 'aria-label': 'Cerrar', onclick: cerrar }, '✕')),
-      h('div', { class: 'sheet-body' },
-        nota ? h('p', { class: 'note' }, nota) : null,
-        grupos.filter(Boolean).map((g) => h('div', { class: 'fx-g' },
-          h('div', { class: 'fx-gh' },
-            h('span', {}, g.signo ? h('span', { class: `fx-s ${g.signo === '−' ? 'minus' : 'plus'}` }, g.signo) : null, g.titulo),
-            g.total != null ? h('b', {}, money(g.total)) : null),
-          g.lineas?.length ? h('ul', { class: 'rows fx-rows' }, g.lineas.map((l) => h('li', {},
-            h('div', { class: 'main' }, l.nombre, l.sub ? h('span', { class: 'sub' }, l.sub) : null),
-            h('span', { class: 'amt' }, money(l.monto, l.signo)))))
-            : g.vacio ? h('p', { class: 'note fx-empty' }, g.vacio) : null)),
-        total != null ? h('div', { class: `fx-total${total < 0 ? ' bad' : ''}` }, h('span', {}, `= ${totalLbl || titulo}`), h('b', {}, money(total))) : null)));
+      h('div', { class: 'sheet-body' }, cuerpo)));
   document.body.append(bg);
   document.addEventListener('keydown', esc);
+  return cerrar;
+}
+
+export function abrirFuente({ titulo, nota, grupos = [], total, totalLbl }) {
+  return abrirHoja({ titulo, kicker: '¿De dónde sale?', cuerpo: [
+    nota ? h('p', { class: 'note' }, nota) : null,
+    grupos.filter(Boolean).map((g) => h('div', { class: 'fx-g' },
+      h('div', { class: 'fx-gh' },
+        h('span', {}, g.signo ? h('span', { class: `fx-s ${g.signo === '−' ? 'minus' : 'plus'}` }, g.signo) : null, g.titulo),
+        g.total != null ? h('b', {}, money(g.total)) : null),
+      g.lineas?.length ? h('ul', { class: 'rows fx-rows' }, g.lineas.map((l) => h('li', {},
+        h('div', { class: 'main' }, l.nombre, l.sub ? h('span', { class: 'sub' }, l.sub) : null),
+        h('span', { class: 'amt' }, money(l.monto, l.signo)))))
+        : g.vacio ? h('p', { class: 'note fx-empty' }, g.vacio) : null)),
+    total != null ? h('div', { class: `fx-total${total < 0 ? ' bad' : ''}` }, h('span', {}, `= ${totalLbl || titulo}`), h('b', {}, money(total))) : null,
+  ] });
 }
