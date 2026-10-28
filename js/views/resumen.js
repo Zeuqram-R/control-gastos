@@ -4,9 +4,8 @@ import * as C from '../calc.js';
 import { preguntasAbiertas } from './facturas.js';
 import { conFuente } from '../fuente.js';
 import { abrirGasto } from '../gasto.js';
-import { abrirHoja } from '../fuente.js';
 
-const state = { buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0, qOff: 0 };
+const state = { movBuscar: '', buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0, qOff: 0 };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
 
 let openCat = null;
@@ -208,19 +207,59 @@ function secTipos(D, B, hoy) {
 function secMes(D) {
   const movs = C.movimientos(D);
   const r = C.resumenMes(movs);
-  const label = r.mes ? `${MESES[Number(r.mes.slice(5, 7)) - 1]} ${r.mes.slice(0, 4)}` : 'el mes';
+  const nomMes = (k) => MESES[Number(k.slice(5, 7)) - 1];
+  const label = r.mes ? `${nomMes(r.mes)} ${r.mes.slice(0, 4)}` : 'el mes';
   const delMes = movs.filter((m) => m.fecha.slice(0, 7) === r.mes);
   const TIPOS = [['Fijo', 'Fijo'], ['Variable', 'Variable'], ['Una vez', 'De una vez'], ['Deudas', 'Deudas pagadas'], ['Pendiente', 'Sin clasificar']];
   const grupoTipo = (t, nombre) => { const l = delMes.filter((m) => (m.gtipo || m.tipo) === t); return { titulo: nombre, total: C.sum(l, (m) => m.monto), lineas: l.map(movLinea), vacio: 'Nada este mes.' }; };
+  // Mes anterior, para comparar.
+  const ant = r.mes ? (() => { let [y, m] = r.mes.split('-').map(Number); m--; if (!m) { m = 12; y--; } return `${y}-${String(m).padStart(2, '0')}`; })() : null;
+  const R0 = ant ? C.resumenMes(movs.filter((m) => m.fecha.slice(0, 7) <= ant)) : null;
+  const hayAnt = R0 && R0.mes === ant;
+  const vs = (k) => {
+    if (!hayAnt) return null;
+    const d = r[k] - R0[k];
+    if (!d) return `Igual que ${nomMes(ant)}`;
+    return h('span', { class: d > 0 ? 'up' : 'down' }, `${d > 0 ? '▲' : '▼'} ${crc(Math.abs(d))} vs ${nomMes(ant)}`);
+  };
+  const enCurso = r.mes === todayCR().slice(0, 7);
   return h('section', { id: 'r-mes', class: 'sec' },
-    h('div', { class: 'sec-head' }, h('h2', {}, `Mes de ${label}`), h('p', { class: 'note' }, `${r.n} movimiento(s)${r.n_pend ? ` · ${r.n_pend} sin clasificar` : ''}.`)),
+    h('div', { class: 'sec-head' }, h('h2', {}, `Mes de ${label}${enCurso ? ' (en curso)' : ''}`), h('p', { class: 'note' }, `${r.n} movimiento(s)${r.n_pend ? ` · ${r.n_pend} sin clasificar` : ''}.`)),
     h('div', { class: 'tiles' },
-      conFuente(tile('Total del mes', crc(r.total)), () => ({ titulo: `Total de ${label}`, grupos: TIPOS.map(([t, n]) => grupoTipo(t, n)).filter((g) => g.lineas.length), total: r.total })),
-      conFuente(tile('Fijo', crc(r.fijo), 'Suscripciones, servicios'), () => ({ titulo: `Fijo · ${label}`, grupos: [grupoTipo('Fijo', 'Fijo')], total: r.fijo })),
-      conFuente(tile('Variable', crc(r.variable), 'Mercado y similares'), () => ({ titulo: `Variable · ${label}`, grupos: [grupoTipo('Variable', 'Variable')], total: r.variable })),
-      conFuente(tile('De una vez', crc(r.una_vez)), () => ({ titulo: `De una vez · ${label}`, grupos: [grupoTipo('Una vez', 'De una vez')], total: r.una_vez })),
-      r.deudas ? conFuente(tile('Deudas pagadas', crc(r.deudas), 'Pagos y abonos a deudas'), () => ({ titulo: `Deudas pagadas · ${label}`, grupos: [grupoTipo('Deudas', 'Deudas pagadas')], total: r.deudas })) : null,
-      r.pendiente ? conFuente(tile('Sin clasificar', crc(r.pendiente)), () => ({ titulo: `Sin clasificar · ${label}`, grupos: [grupoTipo('Pendiente', 'Sin clasificar')], total: r.pendiente })) : null));
+      conFuente(tile('Total del mes', crc(r.total), vs('total')), () => ({ titulo: `Total de ${label}`, grupos: TIPOS.map(([t, n]) => grupoTipo(t, n)).filter((g) => g.lineas.length), total: r.total })),
+      conFuente(tile('Fijo', crc(r.fijo), vs('fijo') || 'Suscripciones, servicios'), () => ({ titulo: `Fijo · ${label}`, grupos: [grupoTipo('Fijo', 'Fijo')], total: r.fijo })),
+      conFuente(tile('Variable', crc(r.variable), vs('variable') || 'Mercado y similares'), () => ({ titulo: `Variable · ${label}`, grupos: [grupoTipo('Variable', 'Variable')], total: r.variable })),
+      conFuente(tile('De una vez', crc(r.una_vez), vs('una_vez')), () => ({ titulo: `De una vez · ${label}`, grupos: [grupoTipo('Una vez', 'De una vez')], total: r.una_vez })),
+      r.deudas ? conFuente(tile('Deudas pagadas', crc(r.deudas), vs('deudas') || 'Pagos y abonos a deudas'), () => ({ titulo: `Deudas pagadas · ${label}`, grupos: [grupoTipo('Deudas', 'Deudas pagadas')], total: r.deudas })) : null,
+      r.pendiente ? conFuente(tile('Sin clasificar', crc(r.pendiente)), () => ({ titulo: `Sin clasificar · ${label}`, grupos: [grupoTipo('Pendiente', 'Sin clasificar')], total: r.pendiente })) : null),
+    comparativo(movs, nomMes));
+}
+
+// Gráfico comparativo por mes: total de cada mes y cada categoría mes a mes. Crece solo con más datos.
+function comparativo(movs, nomMes) {
+  const M = C.porMes(movs, 6);
+  if (!M.meses.length) return null;
+  const n = M.meses.length;
+  const hoyMes = todayCR().slice(0, 7);
+  // Tonos del más viejo (claro) al más nuevo (fuerte).
+  const tono = (i) => `color-mix(in srgb, var(--accent) ${n === 1 ? 100 : Math.round(30 + (70 * i) / (n - 1))}%, var(--line))`;
+  const max = Math.max(1, ...M.cats.flatMap((c) => c.valores));
+  const maxT = Math.max(1, ...M.totales);
+  const etiqueta = (k) => `${nomMes(k).slice(0, 3)}${k.slice(0, 4) !== hoyMes.slice(0, 4) ? ` ${k.slice(2, 4)}` : ''}`;
+  return h('div', { class: 'card cmp' },
+    h('h3', {}, 'Mes a mes'),
+    n < 2 ? h('p', { class: 'note' }, `Por ahora solo hay datos de ${nomMes(M.meses[0])}. Desde el próximo mes este gráfico compara cada categoría contra los meses anteriores (hasta 6).`) : null,
+    n >= 2 ? h('div', { class: 'cmp-cols' }, M.meses.map((k, i) => h('div', { class: 'cmp-col' },
+      h('span', { class: 'cmp-v' }, crc(M.totales[i])),
+      h('div', { class: 'cmp-bar', style: { height: `${Math.max(3, (M.totales[i] / maxT) * 100)}%`, background: tono(i) } }),
+      h('span', { class: 'cmp-k' }, etiqueta(k) + (k === hoyMes ? '*' : ''))))) : null,
+    n >= 2 ? h('div', { class: 'legend' }, M.meses.map((k, i) => h('span', {}, h('i', { style: { background: tono(i) } }), etiqueta(k)))) : null,
+    h('div', { class: 'cmp-cats' }, M.cats.map((c) => h('div', { class: 'cmp-cat' },
+      h('div', { class: 'cmp-cat-h' }, h('span', {}, c.categoria), h('b', {}, crc(c.valores[n - 1])),
+        n >= 2 ? (() => { const d = c.valores[n - 1] - c.valores[n - 2]; return d ? h('span', { class: `cmp-d ${d > 0 ? 'up' : 'down'}` }, `${d > 0 ? '▲' : '▼'} ${crc(Math.abs(d))}`) : null; })() : null),
+      c.valores.map((v, i) => h('div', { class: 'cmp-row', title: `${etiqueta(M.meses[i])}: ${crc(v)}` },
+        h('div', { class: 'cmp-fill', style: { width: `${(v / max) * 100}%`, background: tono(i) } })))))),
+    M.meses.includes(hoyMes) && n >= 2 ? h('p', { class: 'note', style: { margin: '10px 0 0' } }, '* Mes en curso: todavía no está completo.') : null);
 }
 
 function secVencimientos(ctx, cat, eventos, hoy) {
@@ -266,17 +305,36 @@ function secGastos(ctx, movs) {
     : `${dayShort(actual)} – ${dayShort(addDays(actual, 6))}`;
   const nav = (lbl, aria, delta, disabled) => h('button', { type: 'button', class: 'icon-btn', 'aria-label': aria, disabled: disabled || null, onclick: () => { state.movOff += delta; ctx.rerender(); } }, lbl);
   const modo = (k, t) => h('button', { type: 'button', 'aria-pressed': String(state.movModo === k), onclick: () => { if (state.movModo !== k) { state.movModo = k; state.movOff = 0; ctx.rerender(); } } }, t);
+  const filaMov = (g) => h('li', {},
+    h('div', { class: 'main' }, g.titulo,
+      h('span', { class: 'sub' }, [dayShort(g.fecha), g.sub, g.categoria, g.fuente].filter(Boolean).join(' · ')),
+      g.tipo === 'gasto' ? (g.gtipo ? h('span', { class: `pill ${g.gtipo === 'Pendiente' ? 'pend' : g.gtipo === 'Fijo' ? 'rec' : ''}` }, g.gtipo) : null) : h('span', { class: `pill ${g.tipo === 'rec' ? 'rec' : 'pend'}` }, TIPO[g.tipo])),
+    h('span', { class: 'amt' }, crc(g.monto)));
+  const cuerpo = h('div', {});
+  const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const fill = () => {
+    const q = norm(state.movBuscar.trim());
+    if (q) {
+      const res = movs.filter((g) => norm([g.titulo, g.sub, g.categoria, g.fuente, g.gtipo, dayShort(g.fecha), MESES[Number(g.fecha.slice(5, 7)) - 1]].join(' ')).includes(q));
+      cuerpo.replaceChildren(
+        h('div', { class: 'per-nav' }, h('div', { class: 'per-t' }, h('b', {}, `${res.length} resultado(s)`), h('span', { class: 'sub' }, `${crc(C.sum(res, (g) => g.monto))} en total · todos los meses`))),
+        res.length ? h('ul', { class: 'rows' }, res.map(filaMov)) : empty('Nada coincide con la búsqueda.'));
+    } else {
+      cuerpo.replaceChildren(
+        h('div', { class: 'per-nav' },
+          nav('‹', state.movModo === 'mes' ? 'Mes anterior' : 'Semana anterior', 1, state.movOff >= periodos.length - 1),
+          h('div', { class: 'per-t' }, h('b', {}, titulo), h('span', { class: 'sub' }, `${lista.length} movimiento(s) · ${crc(C.sum(lista, (g) => g.monto))}`)),
+          nav('›', state.movModo === 'mes' ? 'Mes siguiente' : 'Semana siguiente', -1, state.movOff <= 0)),
+        lista.length ? h('ul', { class: 'rows' }, lista.map(filaMov)) : empty(state.movModo === 'mes' ? 'No hay movimientos este mes.' : 'No hay movimientos esta semana.'));
+    }
+  };
+  fill();
+  const buscar = h('input', { class: 'input', id: 'buscar-mov', type: 'search', placeholder: 'Buscar: Uber, súper, Wink, octubre…', autocomplete: 'off', oninput: (e) => { state.movBuscar = e.target.value; fill(); } });
+  buscar.value = state.movBuscar;
   return h('section', { id: 'r-gastos', class: 'card sec' },
-    h('div', { class: 'card-head' }, h('h2', {}, 'Movimientos'), h('div', { class: 'head-r' }, h('button', { type: 'button', class: 'btn secondary sm', onclick: () => abrirGasto(ctx) }, '+ Gasto'), h('div', { class: 'seg mini' }, modo('mes', 'Mes'), modo('semana', 'Semana')))),
-    h('div', { class: 'per-nav' },
-      nav('‹', state.movModo === 'mes' ? 'Mes anterior' : 'Semana anterior', 1, state.movOff >= periodos.length - 1),
-      h('div', { class: 'per-t' }, h('b', {}, titulo), h('span', { class: 'sub' }, `${lista.length} movimiento(s) · ${crc(C.sum(lista, (g) => g.monto))}`)),
-      nav('›', state.movModo === 'mes' ? 'Mes siguiente' : 'Semana siguiente', -1, state.movOff <= 0)),
-    lista.length ? h('ul', { class: 'rows' }, lista.map((g) => h('li', {},
-      h('div', { class: 'main' }, g.titulo,
-        h('span', { class: 'sub' }, [dayShort(g.fecha), g.sub, g.categoria, g.fuente].filter(Boolean).join(' · ')),
-        g.tipo === 'gasto' ? (g.gtipo ? h('span', { class: `pill ${g.gtipo === 'Pendiente' ? 'pend' : g.gtipo === 'Fijo' ? 'rec' : ''}` }, g.gtipo) : null) : h('span', { class: `pill ${g.tipo === 'rec' ? 'rec' : 'pend'}` }, TIPO[g.tipo])),
-      h('span', { class: 'amt' }, crc(g.monto))))) : empty(state.movModo === 'mes' ? 'No hay movimientos este mes.' : 'No hay movimientos esta semana.'));
+    h('div', { class: 'card-head' }, h('h2', {}, 'Movimientos'), h('div', { class: 'head-r' }, h('button', { type: 'button', class: 'btn blue sm', onclick: () => abrirGasto(ctx) }, 'Gasto'), h('div', { class: 'seg mini' }, modo('mes', 'Mes'), modo('semana', 'Semana')))),
+    h('div', { class: 'field', style: { margin: '10px 0 4px' } }, buscar),
+    cuerpo);
 }
 
 function secSuper(D) {
@@ -343,87 +401,20 @@ function secCompras(ctx, D) {
     list);
 }
 
-// ---------- Metas de ahorro ----------
-const metaSt = { nombre: '', monto: '', fecha: '' };
+// ---------- Metas de ahorro (resumen; se manejan en la pestaña Metas) ----------
 function secMetas(ctx, D, hoy) {
-  const { sync, toast } = ctx;
-  const cfg = sync.config;
   const metas = C.metasInfo(D, hoy);
-  const P = metas.some((m) => m.falta) ? C.proyeccion(D, hoy, 24) : null;
-  const nueva = () => {
-    const err = h('p', { class: 'error-msg', hidden: true });
-    const nom = h('input', { class: 'input', id: 'm-nombre', placeholder: 'Diciembre, colchón, viaje…', autocomplete: 'off' });
-    const mon = h('input', { class: 'input big-num', id: 'm-monto', inputmode: 'numeric', placeholder: '0', autocomplete: 'off' });
-    const fec = h('input', { class: 'input', id: 'm-fecha', type: 'date', min: addDays(hoy, 1) });
-    const cerrar = abrirHoja({ titulo: 'Nueva meta de ahorro', cuerpo: [
-      h('div', { class: 'field' }, h('label', { for: 'm-nombre' }, '¿Para qué?'), nom),
-      h('div', { class: 'field' }, h('label', { for: 'm-monto' }, 'Cuánto (₡)'), mon),
-      h('div', { class: 'field' }, h('label', { for: 'm-fecha' }, '¿Para cuándo?'), fec),
-      err,
-      h('button', { type: 'button', class: 'btn block', onclick: async () => {
-        const monto = Number(String(mon.value).replace(/[^\d]/g, ''));
-        if (!nom.value.trim() || !monto || !fec.value) { err.textContent = 'Llená los tres datos.'; err.hidden = false; return; }
-        await sync.mutate('metas', { kind: 'upsert', record: { id: `M${Date.now().toString(36)}`, nombre: nom.value.trim(), monto, fecha: fec.value, creada: hoy, por: cfg.persona, aportes: [] } }, `nueva meta: ${nom.value.trim()}`);
-        cerrar(); toast('Meta creada.');
-      } }, 'Crear meta'),
-      h('p', { class: 'note', style: { margin: '10px 0 0' } }, 'Te digo cuánto apartar cada quincena y lo resto en la proyección de las próximas.'),
-    ] });
-    setTimeout(() => nom.focus(), 250);
-  };
-  const apartar = (m) => {
-    const err = h('p', { class: 'error-msg', hidden: true });
-    const mon = h('input', { class: 'input big-num', id: 'm-aporte', inputmode: 'numeric', placeholder: String(m.estaQ || ''), autocomplete: 'off' });
-    let de = 'Salario';
-    const seg = h('div', { class: 'seg wrap' });
-    const opts = [['Salario', 'De la quincena'], ['Fondo', 'Ya estaba ahorrado']];
-    const paint = () => { for (const b of seg.children) b.setAttribute('aria-pressed', String(b.dataset.v === de)); };
-    for (const [v, t] of opts) seg.append(h('button', { type: 'button', 'data-v': v, onclick: () => { de = v; paint(); } }, t));
-    paint();
-    const cerrar = abrirHoja({ titulo: `Apartar para «${m.nombre}»`, cuerpo: [
-      h('div', { class: 'field' }, h('label', { for: 'm-aporte' }, 'Cuánto (₡)'), mon,
-        m.estaQ ? h('p', { class: 'note', style: { margin: '6px 0 0' } }, `Lo sugerido para esta quincena: ${crc(m.estaQ)}.`) : null),
-      h('div', { class: 'field' }, h('label', {}, '¿De dónde sale?'), seg,
-        h('p', { class: 'note', style: { margin: '6px 0 0' } }, 'Si sale de la quincena, se resta de lo que queda libre y se suma al fondo de ahorro.')),
-      err,
-      h('button', { type: 'button', class: 'btn block', onclick: async () => {
-        const monto = Number(String(mon.value || m.estaQ).replace(/[^\d]/g, ''));
-        if (!monto) { err.textContent = 'Poné cuánto.'; err.hidden = false; return; }
-        const aportes = [...(m.aportes || []), { fecha: hoy, monto, por: cfg.persona, fuente: de }];
-        await sync.mutate('metas', { kind: 'patch', record: { id: m.id, aportes } }, `aparta ${crc(monto)} para ${m.nombre}`);
-        const fondo = (sync.data('cuentas') || []).find((c) => c.tipo === 'ahorro' && c.moneda !== 'USD');
-        if (fondo && de === 'Salario') await sync.mutate('cuentas', { kind: 'patch', record: { id: fondo.id, saldo: (Number(fondo.saldo) || 0) + monto, fecha: hoy } }, `fondo +${crc(monto)}`);
-        cerrar(); toast(`Apartado ${crc(monto)} para «${m.nombre}».`);
-      } }, 'Apartar'),
-    ] });
-    setTimeout(() => mon.focus(), 250);
-  };
-  const quitar = (m) => {
-    abrirHoja({ titulo: `«${m.nombre}»`, cuerpo: [
-      h('ul', { class: 'rows' }, m.aportes.length ? m.aportes.slice().reverse().map((a) => h('li', {}, h('div', { class: 'main' }, `${dayShort(a.fecha)} · ${a.por || ''}`, h('span', { class: 'sub' }, a.fuente === 'Fondo' ? 'Ya estaba ahorrado' : 'De la quincena')), h('span', { class: 'amt' }, crc(Number(a.monto))))) : h('li', {}, h('div', { class: 'main' }, 'Todavía no se ha apartado nada.'))),
-      h('button', { type: 'button', class: 'btn secondary block', style: { marginTop: '14px' }, onclick: async () => {
-        document.querySelector('.sheet-bg')?.remove();
-        await sync.mutate('metas', { kind: 'patch', record: { id: m.id, estado: 'archivada' } }, `archiva meta ${m.nombre}`);
-        toast(`Meta «${m.nombre}» quitada.`, { label: 'Deshacer', fn: () => sync.mutate('metas', { kind: 'patch', record: { id: m.id, estado: 'activa' } }, `vuelve meta ${m.nombre}`) });
-      } }, m.lista ? 'Archivar (ya se cumplió)' : 'Quitar esta meta'),
-    ] });
-  };
+  const ir = () => ctx.go('metas');
   return h('section', { id: 'r-metas', class: 'sec' },
-    h('div', { class: 'sec-head card-head' }, h('h2', {}, 'Metas de ahorro'), h('button', { type: 'button', class: 'btn secondary sm', onclick: nueva }, '+ Meta')),
-    metas.length ? metas.map((m) => {
-      // ¿La proyección se pone en negativo antes de la fecha meta (ya restando lo de la meta)?
-      const neg = P ? P.futuras.find((r) => r.q.inicio <= m.fecha && r.queda < 0) : null;
-      return h('div', { class: 'card meta' },
-        h('div', { class: 'cuenta-h' },
-          h('div', {}, h('b', {}, m.nombre), h('span', { class: 'sub' }, `${crc(m.meta)} para el ${dayShort(m.fecha)} ${m.fecha.slice(0, 4)}`)),
-          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Más opciones', onclick: () => quitar(m) }, '⋯')),
-        h('div', { class: 'meta-bar' }, h('div', { style: { width: `${m.pct * 100}%` } })),
-        h('div', { class: 'qgrid' },
-          stat('Apartado', crc(m.ahorrado), `${Math.round(m.pct * 100)}% de la meta`),
-          m.lista ? stat('¡Listo!', '🎉', 'Ya se juntó todo') : stat(m.vencida ? 'Faltó' : 'Falta', crc(m.falta), m.vencida ? 'La fecha ya pasó' : `${m.n} quincena(s) hasta el ${dayShort(m.fecha)}`, m.vencida ? 'var(--bad)' : null),
-          m.lista || m.vencida ? null : stat('Esta quincena', crc(m.estaQ), m.enActual ? `Ya apartaron ${crc(m.enActual)}` : `Después, ${crc(m.porQ)} por quincena`),
-          m.lista || m.vencida ? null : stat('¿Alcanza?', neg ? 'Justo no' : 'Sí', neg ? `La quincena del ${dayShort(neg.q.inicio)} quedaría en −${crc(-neg.queda)}` : 'La proyección aguanta', neg ? 'var(--warn)' : 'var(--ok)')),
-        m.lista ? null : h('button', { type: 'button', class: 'btn block', style: { marginTop: '12px' }, onclick: () => apartar(m) }, 'Apartar'));
-    }) : h('div', { class: 'card' }, empty('Sin metas todavía. Creá una (por ejemplo, juntar para diciembre) y te digo cuánto apartar cada quincena.')));
+    h('div', { class: 'sec-head' }, h('h2', {}, 'Metas de ahorro')),
+    h('div', { class: 'card tap-card', role: 'button', 'aria-label': 'Abrir Metas', onclick: ir },
+      metas.length ? h('ul', { class: 'rows' }, metas.map((m) => h('li', {},
+        h('div', { class: 'main' }, m.nombre,
+          h('div', { class: 'meta-bar sm' }, h('div', { style: { width: `${m.pct * 100}%` } })),
+          h('span', { class: 'sub' }, m.lista ? '¡Cumplida!' : m.vencida ? `Faltaron ${crc(m.falta)}` : `${crc(m.ahorrado)} de ${crc(m.meta)} · para el ${dayShort(m.fecha)}`)),
+        m.lista || m.vencida ? null : h('div', { class: 'meta-q' }, h('span', { class: 'sub' }, 'Esta quincena'), h('b', {}, m.estaQ ? crc(m.estaQ) : '✓')))))
+        : h('p', { class: 'note', style: { margin: 0 } }, 'Sin metas todavía. Tocá para crear una en Metas.'),
+      h('div', { class: 'tap-more' }, 'Ver en Metas ›')));
 }
 
 // ---------- Cuentas (Bank of America y las que vengan) ----------
@@ -507,6 +498,6 @@ function secFacturas(ctx) {
       h('b', {}, pend.length ? `Claude tiene ${pend.length} pregunta${pend.length === 1 ? '' : 's'}` : 'Anotar'),
       h('span', { class: 'sub' }, pend.length ? 'Sobre las últimas facturas. Tocá para contestar.' : cola ? `${cola} esperando internet para subir` : 'Anotá un gasto o subí la foto de la factura.')),
     h('div', { class: 'fac-btns' },
-      h('button', { type: 'button', class: 'btn secondary', onclick: () => abrirGasto(ctx) }, '+ Gasto'),
+      h('button', { type: 'button', class: 'btn blue', onclick: () => abrirGasto(ctx) }, 'Gasto'),
       h('button', { type: 'button', class: 'btn', onclick: () => ctx.go('facturas') }, pend.length ? 'Contestar' : 'Factura')));
 }

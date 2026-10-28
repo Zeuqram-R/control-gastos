@@ -84,7 +84,7 @@ export function abrirGasto(ctx, pre = {}) {
       if (cta) await sync.mutate('cuentas', { kind: 'patch', record: { id: cta.id, saldo: antes } }, `saldo de ${cta.nombre}`);
     } });
   };
-  const btn = h('button', { type: 'button', class: 'btn block', onclick: guardar }, 'Anotar gasto');
+  const btn = h('button', { type: 'button', class: 'btn blue block', onclick: guardar }, 'Anotar gasto');
 
   const cerrar = abrirHoja({ titulo: 'Anotar un gasto', kicker: 'Sin factura', cuerpo: [
     h('div', { class: 'field' }, h('label', { for: 'g-monto' }, 'Monto'), h('div', { class: 'row-add' }, montoIn, monedaSeg)),

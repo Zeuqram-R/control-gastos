@@ -9,17 +9,18 @@ import { push } from './push.js';
 let lockDisponible = false;
 import { viewResumen, viewCategoria } from './views/resumen.js';
 import { viewLista } from './views/lista.js';
+import { viewMetas } from './views/metas.js';
 import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.9';
+const APP_VERSION = '5.10';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
 const sync = createSync({ onChange: () => { render(); warmPhotos(); }, onStatus: (s) => renderStatus(s), onLog: () => { if (page === 'historial') render(); } });
 let page = 'resumen';
-const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', facturas: 'Facturas', setup: 'Control de gastos' };
+const TITLES = { resumen: 'Resumen', lista: 'Lista', productos: 'Productos', recurrentes: 'Recurrentes', deudas: 'Deudas', metas: 'Metas', ajustes: 'Ajustes', historial: 'Historial', producto: 'Producto', categoria: 'Gastos', facturas: 'Facturas', setup: 'Control de gastos' };
 
 // Aviso abajo: aparece y se desvanece suave.
 function toast(msg, action, ms) {
@@ -90,7 +91,7 @@ function render() {
   $('#page-title').textContent = page === 'categoria' && catActual ? (catActual === 'General' ? 'Quincena' : catActual) : (TITLES[page] || 'Control de gastos');
   $('#btn-back').hidden = !SUB.has(page) || !connected;
   $('#btn-back').setAttribute('aria-label', `Regresar a ${TITLES[back] || 'Resumen'}`);
-  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), facturas: needData(viewFacturas), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
+  const view = { setup: viewSetup, resumen: needData(viewResumen), lista: needData(viewLista), productos: needData(viewProductos), producto: needData(viewProducto), categoria: needData(viewCategoria), facturas: needData(viewFacturas), recurrentes: needData(viewRecurrentes), deudas: needData(viewDeudas), metas: needData(viewMetas), ajustes: viewAjustes, historial: viewHistorial }[page] || viewProximamente;
   // Conserva lo que se está escribiendo si la página se vuelve a dibujar.
   const active = document.activeElement;
   const keep = active && active.id && main.contains(active) ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
@@ -255,6 +256,40 @@ function syncCard() {
 }
 const MESES_UI = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
+// Guía para armar el atajo de Siri "Anotar gasto" (manda el gasto directo a GitHub, sin abrir la app).
+function seccionSiri() {
+  const persona = sync.config?.persona || 'Jose';
+  const URL_API = 'https://api.github.com/repos/Zeuqram-R/control-gastos-datos/dispatches';
+  const copiar = (txt, que) => h('button', { type: 'button', class: 'btn secondary sm', onclick: async () => {
+    try { await navigator.clipboard.writeText(txt); toast(`${que} copiado.`); } catch (e) { toast('No se pudo copiar; mantené presionado el texto.'); }
+  } }, 'Copiar');
+  const val = (txt, que) => h('div', { class: 'siri-val' }, h('code', {}, txt), copiar(txt, que));
+  const paso = (n, titulo, ...cuerpo) => h('li', {}, h('b', {}, titulo), ...cuerpo);
+  return h('section', { class: 'card' },
+    h('h2', {}, 'Atajo de Siri'),
+    h('p', { class: 'note' }, 'Decí "Oye Siri, anotar gasto": te pregunta cuánto, en qué, la categoría y cómo se pagó, y lo anota sin abrir la app (tarda unos segundos en aparecer aquí). También queda como botón en la pantalla de inicio o en un widget de Atajos.'),
+    h('details', { class: 'pp' }, h('summary', {}, 'Cómo armarlo (una sola vez, ~5 minutos)'),
+      h('ol', { class: 'siri-pasos' },
+        paso(1, 'Abrí la app Atajos → + (nuevo atajo) y ponele de nombre "Anotar gasto".', h('span', { class: 'sub' }, 'Ese nombre es lo que le decís a Siri.')),
+        paso(2, 'Agregá "Pedir entrada":', h('span', { class: 'sub' }, 'Tipo: Número · Pregunta: ¿Cuánto fue?')),
+        paso(3, 'Agregá otro "Pedir entrada":', h('span', { class: 'sub' }, 'Tipo: Texto · Pregunta: ¿En qué?')),
+        paso(4, 'Agregá "Lista" con las categorías y después "Elegir de la lista" (indicación: Categoría):', h('span', { class: 'sub' }, 'Súper, Casa, Servicios, Transporte, Salidas, Weed, Vapos, Emergencias.')),
+        paso(5, 'Agregá otra "Lista" y otro "Elegir de la lista" (indicación: ¿Cómo se pagó?):', h('span', { class: 'sub' }, 'Salario, Wink, BofA, Préstamo, Efectivo.')),
+        paso(6, 'Agregá "Obtener contenido de URL" y poné esta URL:', val(URL_API, 'URL'),
+          h('span', { class: 'sub' }, 'Tocá "Mostrar más": Método POST.'),
+          h('span', { class: 'sub' }, 'Encabezados: Authorization = Bearer + espacio + tu token (está en Contraseñas de Apple), y Accept = application/vnd.github+json'),
+          val('application/vnd.github+json', 'Accept'),
+          h('span', { class: 'sub' }, 'Cuerpo de la solicitud: JSON. Agregá el campo event_type (Texto) = gasto, y el campo client_payload (Diccionario) con adentro:'),
+          h('ul', { class: 'siri-campos' },
+            h('li', {}, h('code', {}, 'monto'), ' (Número) → la "Entrada proporcionada" del paso 2'),
+            h('li', {}, h('code', {}, 'comercio'), ' (Texto) → la "Entrada proporcionada" del paso 3'),
+            h('li', {}, h('code', {}, 'categoria'), ' (Texto) → "Elemento elegido" del paso 4'),
+            h('li', {}, h('code', {}, 'fuente'), ' (Texto) → "Elemento elegido" del paso 5'),
+            h('li', {}, h('code', {}, 'quien'), ` (Texto) → ${persona}`))),
+        paso(7, 'Agregá "Mostrar notificación" con el texto "Gasto anotado ✓".', h('span', { class: 'sub' }, 'Listo. Probalo con el botón ▶︎ de Atajos o diciéndole a Siri "Anotar gasto".'))),
+      h('p', { class: 'note', style: { margin: '10px 0 0' } }, 'Para dólares, agregá en client_payload el campo moneda = USD. El token queda guardado solo en el atajo de tu iPhone; cuando lo renovés, cambialo también ahí.')));
+}
+
 function viewAjustes() {
   const s = sync.status;
   const c = sync.config;
@@ -340,7 +375,7 @@ function viewAjustes() {
       h('div', { class: 'field' }, h('label', { for: 'aj-dev' }, 'Nombre del aparato'), devIn, h('span', { class: 'hint' }, 'Sale en el historial de cambios.')),
       h('div', { class: 'field', style: { marginBottom: '0' } }, h('label', { for: 'aj-inicio' }, 'Abrir la app en'),
         h('select', { class: 'input', id: 'aj-inicio', onchange: (e) => { prefs.set('inicio', e.target.value); toast('Listo: la próxima vez abre ahí.'); } },
-          ['resumen', 'lista', 'productos', 'recurrentes', 'deudas'].map((k) => h('option', { value: k, selected: prefs.get('inicio', 'resumen') === k || null }, TITLES[k]))))),
+          ['resumen', 'lista', 'productos', 'recurrentes', 'deudas', 'metas'].map((k) => h('option', { value: k, selected: prefs.get('inicio', 'resumen') === k || null }, TITLES[k]))))),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Token de GitHub'),
@@ -353,6 +388,8 @@ function viewAjustes() {
       h('p', { class: 'note', style: { marginTop: '12px', marginBottom: '0' } }, 'Para cambiarlo: Desconectar (abajo), pegar el token nuevo y Conectar.')),
 
     syncCard(),
+
+    seccionSiri(),
 
     h('section', { class: 'card' },
       h('h2', {}, 'Respaldo'),

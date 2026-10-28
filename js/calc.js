@@ -439,6 +439,22 @@ export function iva(compras, productos) {
 
 export { sum, groupBy };
 
+// Gasto por mes y por categoría (para el cierre de mes y el gráfico comparativo).
+export function porMes(movs, n = 6) {
+  const meses = [...new Set(movs.map((m) => m.fecha.slice(0, 7)))].sort();
+  if (!meses.length) return { meses: [], cats: [], totales: [] };
+  // Todos los meses desde el primero (aunque alguno no tenga movimientos), los últimos n.
+  const todos = [];
+  for (let [y, mm] = meses[0].split('-').map(Number); `${y}-${String(mm).padStart(2, '0')}` <= meses[meses.length - 1]; mm === 12 ? (y++, mm = 1) : mm++) todos.push(`${y}-${String(mm).padStart(2, '0')}`);
+  const ult = todos.slice(-n);
+  const totales = ult.map((k) => sum(movs.filter((m) => m.fecha.startsWith(k)), (m) => m.monto));
+  const nombres = [...new Set(movs.map((m) => m.categoria))];
+  const cats = nombres.map((c) => ({ categoria: c, valores: ult.map((k) => sum(movs.filter((m) => m.categoria === c && m.fecha.startsWith(k)), (m) => m.monto)) }))
+    .filter((c) => c.valores.some(Boolean))
+    .sort((a, b) => b.valores[b.valores.length - 1] - a.valores[a.valores.length - 1] || sum(b.valores) - sum(a.valores));
+  return { meses: ult, cats, totales };
+}
+
 // Productos comprados en más de un tipo de lugar, comparados por kilo, litro o unidad.
 export function compararLugares(compras, productos, lugares) {
   const info = new Map(productos.map((p) => [p.clave, p]));
