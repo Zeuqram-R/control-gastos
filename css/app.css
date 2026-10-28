@@ -480,3 +480,30 @@ html.locked #app { filter: blur(18px); pointer-events: none; }
 .proy-total.bad b { color: var(--bad); }
 .lockscreen { cursor: pointer; }
 .lock-hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+/* ¿De dónde sale? */
+.fx { cursor: pointer; border-radius: 10px; transition: background .15s; }
+.fx:active { background: var(--accent-soft); }
+.fx-i { color: var(--accent); font-weight: 700; }
+.sheet-bg { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, .45); display: flex; align-items: flex-end; justify-content: center; animation: fadein .15s; }
+.sheet-bg.out { opacity: 0; transition: opacity .18s; }
+.sheet { background: var(--panel); color: var(--fg); width: 100%; max-width: 640px; max-height: 82vh; border-radius: 18px 18px 0 0; display: flex; flex-direction: column; box-shadow: var(--shadow); padding-bottom: env(safe-area-inset-bottom); animation: sheetup .2s ease-out; }
+@keyframes sheetup { from { transform: translateY(40px); opacity: .6; } to { transform: none; opacity: 1; } }
+.sheet-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 16px 10px; border-bottom: 1px solid var(--line); }
+.sheet-h b { display: block; font-size: 17px; }
+.sheet-k { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.sheet-body { overflow-y: auto; padding: 8px 16px 18px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.fx-g { margin-top: 12px; }
+.fx-gh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-weight: 600; padding: 6px 0; border-bottom: 2px solid var(--line); }
+.fx-s { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; margin-right: 8px; font-size: 14px; color: #fff; }
+.fx-s.plus { background: var(--ok); }
+.fx-s.minus { background: var(--bad); }
+.fx-rows li { padding: 8px 0 8px 28px; }
+.fx-empty { margin: 6px 0 0 28px; }
+.fx-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); font-weight: 600; }
+.fx-total b { font-size: 20px; color: var(--ok); }
+.fx-total.bad b { color: var(--bad); }
+.fx-hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.fondo-l { display: flex; justify-content: space-between; gap: 10px; margin: 10px 0 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 14px; color: var(--muted); }
+.fondo-l b { color: var(--fg); }
+.proy-total.fx .lbl { font-size: inherit; color: inherit; text-transform: none; letter-spacing: 0; }

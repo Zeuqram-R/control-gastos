@@ -167,7 +167,7 @@ export const ajustarPrestamos = (deudas, recurrentes, pagosRec, abonos) => saldo
 // Lo que sale de una cuenta aparte (p. ej. Bank of America) no se cuenta aquí.
 export function movimientos(D) {
   const tc = ultimoTC(D.tipo_cambio);
-  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente));
+  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente).filter(Boolean));
   const recs = new Map(D.recurrentes.map((r) => [r.id, r]));
   const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc);
   const venta = tc ? Number(tc.venta) : 0;
@@ -204,7 +204,7 @@ export function cuentasInfo(D, hoy, dias = 30) {
   return cuentas.map((c) => {
     const saldo = Number(c.saldo) || 0;
     const evs = [];
-    for (const f of D.recurrentes.filter((r) => r.fuente === c.fuente && !['cancelado', 'sin costo', 'terminado'].includes(r.estado))) {
+    for (const f of D.recurrentes.filter((r) => c.fuente && r.fuente === c.fuente && !['cancelado', 'sin costo', 'terminado'].includes(r.estado))) {
       for (const fecha of fechasEntre(f, hoy, hasta)) if (!pag.has(`${f.id}_${fecha}`)) evs.push({ f, fecha });
     }
     evs.sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -222,6 +222,13 @@ export function cuentasInfo(D, hoy, dias = 30) {
 }
 
 // Balance de la quincena: lo que entra, lo que hay que pagar, lo gastado y lo que queda.
+// Fondo de ahorro: cuentas marcadas tipo "ahorro" (no se gastan en la quincena, pero sirven de colchón).
+export function fondoAhorro(D) {
+  const tc = ultimoTC(D.tipo_cambio);
+  const fs = (D.cuentas || []).filter((c) => c.tipo === 'ahorro');
+  return { cuentas: fs, total: sum(fs, (c) => (c.moneda === 'USD' ? (tc ? Math.round(Number(c.saldo) * Number(tc.compra)) : 0) : Number(c.saldo) || 0)) };
+}
+
 export function balanceQuincena(D, hoy) {
   const q = quincenaDe(hoy);
   const tc = ultimoTC(D.tipo_cambio);
@@ -233,7 +240,7 @@ export function balanceQuincena(D, hoy) {
   const pagRec = new Map(D.pagos_recurrentes.map((p) => [p.id, p]));
   const pagDeu = new Map(D.pagos_deudas.map((p) => [p.id, p]));
   // Lo que sale de otras cuentas (p. ej. Bank of America) no cuenta contra el salario de la quincena.
-  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente));
+  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente).filter(Boolean));
   const activos = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado) && !deCuenta.has(f.fuente));
   const porPagar = activos.map((f) => ({ ...f, prox: proximoPago(f, hoy) }))
     .filter((f) => f.prox && f.prox <= q.fin && !pagRec.has(`${f.id}_${f.prox}`) && aplica(f, D.cuentas || []));
@@ -245,7 +252,7 @@ export function balanceQuincena(D, hoy) {
   const gastado = sum(movs, (m) => m.monto);
   const fijos = sum(porPagar, (f) => f.monto_crc), deu = sum(deudasQ, (d) => d.crc);
   return {
-    q, tc, ing, agui, neto, bruto, saldos, saldo, porPagar, deudasQ, fijos, deu, tachado, gastado, wink,
+    q, tc, ing, agui, neto, bruto, movs, saldos, saldo, porPagar, deudasQ, fijos, deu, tachado, gastado, wink,
     sinFecha: activos.filter((f) => !f.dia).length,
     queda: neto + saldo - fijos - deu - (gastado - wink),
   };
@@ -415,7 +422,7 @@ export const addDays30 = (d) => addDays(d, 30);
 export function proyeccion(D, hoy, n = 12) {
   const tc = ultimoTC(D.tipo_cambio);
   const B = balanceQuincena(D, hoy);
-  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente));
+  const deCuenta = new Set((D.cuentas || []).map((c) => c.fuente).filter(Boolean));
   const pagRec = new Set(D.pagos_recurrentes.map((p) => p.id));
   const pagDeu = new Set(D.pagos_deudas.map((p) => p.id));
   const recs = recurrentesCRC(D.recurrentes, tc).filter((f) => !['cancelado', 'sin costo', 'terminado'].includes(f.estado) && !deCuenta.has(f.fuente));
@@ -423,7 +430,8 @@ export function proyeccion(D, hoy, n = 12) {
   const movs = movimientos(D);
   // Gasto del día a día (súper, salidas, transporte…): promedio de las quincenas cerradas; si no hay, lo de la quincena actual.
   const variablesDe = (ini, fin) => sum(movs.filter((m) => m.fecha >= ini && m.fecha <= fin && m.gtipo === 'Variable'), (m) => m.monto);
-  const cerradas = [...groupBy(movs.filter((m) => m.fecha < B.q.inicio), (m) => quincenaDe(m.fecha).inicio)].map(([ini]) => variablesDe(ini, quincenaDe(ini).fin));
+  const estDetalle = [...groupBy(movs.filter((m) => m.fecha < B.q.inicio), (m) => quincenaDe(m.fecha).inicio)].map(([ini]) => ({ inicio: ini, fin: quincenaDe(ini).fin, monto: variablesDe(ini, quincenaDe(ini).fin) }));
+  const cerradas = estDetalle.map((x) => x.monto);
   const estVar = cerradas.length ? Math.round(sum(cerradas) / cerradas.length) : variablesDe(B.q.inicio, B.q.fin);
   const estBase = cerradas.length ? `promedio de ${cerradas.length} quincena(s)` : 'lo que va de esta quincena';
   const netos = ingresosNetos(D.ingresos);
@@ -447,7 +455,7 @@ export function proyeccion(D, hoy, n = 12) {
     pagos.sort((a, b) => a.fecha.localeCompare(b.fecha));
     const porPagar = sum(pagos, (p) => p.monto);
     const queda = prev.queda + neto - porPagar - estVar;
-    const r = { q, ing, agui, neto, arrastre: prev.queda, pagos, porPagar, estVar, estBase, queda };
+    const r = { q, ing, agui, neto, arrastre: prev.queda, arrastreDe: prev.q, pagos, porPagar, estVar, estBase, estDetalle, queda };
     out.push(r);
     prev = { q, queda, wink: 0 };
   }

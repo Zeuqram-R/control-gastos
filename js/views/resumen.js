@@ -2,6 +2,7 @@
 import { h, privacy, addDays, crc, usd, pct, todayCR, dayShort, daysBetween, MESES, stat, tile, bars, thumb, empty } from '../ui.js';
 import * as C from '../calc.js';
 import { preguntasAbiertas } from './facturas.js';
+import { conFuente } from '../fuente.js';
 
 const state = { buscar: '', todoVenc: false, todoCompras: false, movModo: 'mes', movOff: 0, qOff: 0 };
 const more = (n, key, rerender) => h('button', { type: 'button', class: 'more', onclick: () => { state[key] = true; rerender(); } }, `Ver ${n} más`);
@@ -44,6 +45,17 @@ function qNav(ctx, titulo) {
 
 const aguiTxt = (a) => `aguinaldo de ${a.persona} ${crc(a.neto)}${a.proporcional ? ` (proporcional desde el ${dayShort(a.desde)})` : ''}, a más tardar el 20 dic.`;
 
+// ---- ¿De dónde sale? (líneas para la hoja de detalle) ----
+const movLinea = (m) => ({ nombre: m.titulo, sub: [dayShort(m.fecha), m.sub, m.categoria, m.fuente].filter(Boolean).join(' · '), monto: m.monto });
+const ingLineas = (ing, agui) => [
+  ...ing.map((r) => ({ nombre: `Salario de ${r.persona}`, sub: `${crc(r.bruto)} bruto − ${crc(r.deduccion)} de CCSS (${r.deduccion_pct}%)`, monto: r.neto })),
+  ...agui.map((a) => ({ nombre: `Aguinaldo de ${a.persona}`, sub: `Sin rebajos${a.proporcional ? ` · proporcional desde el ${dayShort(a.desde)}` : ''} · a más tardar el 20 dic.`, monto: a.neto })),
+];
+const fondoNota = (D, queda) => {
+  const F = C.fondoAhorro(D);
+  return F.total ? ` Aparte está el fondo de ahorro (${crc(F.total)}); con él serían ${queda + F.total < 0 ? '−' : ''}${crc(Math.abs(queda + F.total))}.` : '';
+};
+
 function secProyeccion(ctx, D, hoy) {
   const P = C.proyeccion(D, hoy, 12);
   const r = P.futuras[state.qOff - 1];
@@ -53,11 +65,32 @@ function secProyeccion(ctx, D, hoy) {
     qNav(ctx, `${dayShort(r.q.inicio)} – ${dayShort(r.q.fin)}`),
     h('div', { class: 'card proy' },
       h('div', { class: 'qgrid' },
-        stat('Sobra de la anterior', `${r.arrastre < 0 && !privacy.hide ? '−' : ''}${crc(Math.abs(r.arrastre))}`, r.arrastre < 0 ? 'La anterior queda en negativo' : 'Lo que quedaría libre de la quincena anterior', r.arrastre < 0 ? 'var(--bad)' : null),
-        stat(r.agui.length ? 'Salario + aguinaldo' : 'Salario', crc(r.neto), [r.ing.length ? `${r.ing.map((x) => x.persona).join(' + ')} · quincena ${r.q.numero === 1 ? 'del 12' : 'del 26'} (neto)` : 'Sin salario anotado', ...r.agui.map(aguiTxt)].join(' · ')),
-        stat('Por pagar', crc(r.porPagar), `${r.pagos.length} pago(s) con fecha${r.pagos.some((p) => p.tipo === 'tarjeta') ? ' · incluye la tarjeta Wink' : ''}`),
-        stat('Día a día (estimado)', crc(r.estVar), `Súper, salidas, transporte… (${r.estBase})`)),
-      h('div', { class: `proy-total${neg ? ' bad' : ''}` }, h('span', {}, neg ? 'Faltaría' : 'Quedaría libre'), h('b', {}, quedaTxt)),
+        conFuente(stat('Sobra de la anterior', `${r.arrastre < 0 && !privacy.hide ? '−' : ''}${crc(Math.abs(r.arrastre))}`, r.arrastre < 0 ? 'La anterior queda en negativo' : 'Lo que quedaría libre de la quincena anterior', r.arrastre < 0 ? 'var(--bad)' : null), () => ({
+          titulo: 'Sobra de la anterior',
+          nota: `Es lo que ${state.qOff === 1 ? 'queda libre en la quincena actual' : 'quedaría libre en la quincena anterior'} (${dayShort(r.arrastreDe.inicio)} – ${dayShort(r.arrastreDe.fin)}). Tocá ‹ para ver cómo se calcula.`,
+          total: r.arrastre, totalLbl: 'Pasa a esta quincena' })),
+        conFuente(stat(r.agui.length ? 'Salario + aguinaldo' : 'Salario', crc(r.neto), [r.ing.length ? `${r.ing.map((x) => x.persona).join(' + ')} · quincena ${r.q.numero === 1 ? 'del 12' : 'del 26'} (neto)` : 'Sin salario anotado', ...r.agui.map(aguiTxt)].join(' · ')), () => ({
+          titulo: r.agui.length ? 'Salario + aguinaldo' : 'Salario',
+          grupos: [{ titulo: 'Entra en esta quincena', signo: '+', total: r.neto, lineas: ingLineas(r.ing, r.agui), vacio: 'No hay salario anotado para esta quincena.' }], total: r.neto })),
+        conFuente(stat('Por pagar', crc(r.porPagar), `${r.pagos.length} pago(s) con fecha${r.pagos.some((p) => p.tipo === 'tarjeta') ? ' · incluye la tarjeta Wink' : ''}`), () => ({
+          titulo: 'Por pagar',
+          grupos: [{ titulo: `Pagos del ${dayShort(r.q.inicio)} al ${dayShort(r.q.fin)}`, signo: '−', total: r.porPagar, lineas: r.pagos.map((i) => ({ nombre: i.nombre, sub: `${dayShort(i.fecha)} · ${i.quien || 'Ambos'}${i.tipo === 'deuda' ? ' · deuda' : i.tipo === 'tarjeta' ? ' · tarjeta' : ' · recurrente'}`, monto: i.monto })), vacio: 'No hay pagos con fecha en esta quincena.' }],
+          nota: 'Recurrentes que vencen en estas fechas, deudas con fecha límite aquí y lo usado con Wink la quincena anterior. Lo que sale de Bank of America no se cuenta aquí.', total: r.porPagar })),
+        conFuente(stat('Día a día (estimado)', crc(r.estVar), `Súper, salidas, transporte… (${r.estBase})`), () => ({
+          titulo: 'Día a día (estimado)',
+          nota: r.estDetalle.length ? 'Promedio de los gastos variables (súper, salidas, transporte…) de las quincenas que ya cerraron.' : 'Todavía no hay quincenas cerradas, así que uso lo que va de gasto variable en la actual.',
+          grupos: r.estDetalle.length ? [{ titulo: `Quincenas cerradas (${r.estDetalle.length})`, lineas: r.estDetalle.map((x) => ({ nombre: `${dayShort(x.inicio)} – ${dayShort(x.fin)}`, monto: x.monto })) }] : [],
+          total: r.estVar, totalLbl: r.estDetalle.length > 1 ? 'Promedio' : 'Estimado' }))),
+      conFuente(h('div', { class: `proy-total${neg ? ' bad' : ''}` }, h('span', { class: 'lbl' }, neg ? 'Faltaría' : 'Quedaría libre'), h('b', {}, quedaTxt)), () => ({
+        titulo: neg ? 'Faltaría' : 'Quedaría libre',
+        nota: 'Lo que sobra de la anterior, más lo que entra, menos los pagos con fecha y el gasto del día a día estimado.' + fondoNota(D, r.queda),
+        grupos: [
+          { titulo: 'Sobra de la anterior', signo: '+', total: r.arrastre },
+          { titulo: r.agui.length ? 'Salario + aguinaldo' : 'Salario', signo: '+', total: r.neto, lineas: ingLineas(r.ing, r.agui) },
+          { titulo: 'Por pagar', signo: '−', total: r.porPagar, lineas: r.pagos.map((i) => ({ nombre: i.nombre, sub: dayShort(i.fecha), monto: i.monto })) },
+          { titulo: 'Día a día (estimado)', signo: '−', total: r.estVar },
+        ], total: r.queda })),
+      fondoLinea(D, r.queda),
       r.pagos.length ? h('details', { class: 'pp' },
         h('summary', {}, 'Ver lo que hay que pagar'),
         h('ul', { class: 'rows' }, r.pagos.map((i) => h('li', {},
@@ -77,6 +110,12 @@ function secQuincena(ctx, D, B, hoy) {
     ...B.deudasQ.map((d) => ({ fecha: String(d.fecha_limite).slice(0, 10), nombre: `${d.concepto} (${d.persona})`, monto: d.crc, extra: d.moneda === 'USD' ? usd(d.monto) : '', quien: d.de_quien })),
   ].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const gen = genCard(D, B, 'General', hoy, false);
+  const gIng = { titulo: 'Ingreso + saldo a favor', signo: '+', total: B.neto + B.saldo, lineas: [
+    ...ingLineas(B.ing, B.agui),
+    ...B.saldos.map((s) => ({ nombre: `Saldo a favor${s.donde ? ` (${s.donde.toLowerCase()})` : ''}`, sub: [s.moneda === 'USD' ? `${usd(s.monto)} al tipo de cambio` : null, s.nota].filter(Boolean).join(' · '), monto: s.crc })),
+  ], vacio: 'No hay ingresos anotados para esta quincena.' };
+  const gPagar = { titulo: `Por pagar hasta el ${dayShort(q.fin)}`, signo: '−', total: B.fijos + B.deu, lineas: items.map((i) => ({ nombre: i.nombre, sub: `${dayShort(i.fecha)}${i.extra ? ` · ${i.extra}` : ''} · ${i.quien || 'Ambos'}`, monto: i.monto })), vacio: 'Nada pendiente.' };
+  const gGastado = { titulo: 'Gastado del salario', signo: '−', total: B.gastado - B.wink, lineas: B.movs.filter((m) => m.fuente !== 'Wink').map(movLinea), vacio: 'Nada todavía.' };
   return h('section', { id: 'r-q', class: 'sec' },
     qNav(ctx, `Quincena actual · ${dayShort(q.inicio)} – ${dayShort(q.fin)}`),
     h('div', { class: 'sec-head' },
@@ -84,10 +123,18 @@ function secQuincena(ctx, D, B, hoy) {
         + (B.tc ? ` Dólar: ${crc2(B.tc.venta)} venta · ${crc2(B.tc.compra)} compra (${dayShort(B.tc.fecha)}).` : ''))),
     h('div', { class: 'card' },
       h('div', { class: 'qgrid' },
-        stat('Ingreso + saldo a favor', crc(B.neto + B.saldo), ingSub),
-        stat('Por pagar', crc(B.fijos + B.deu), `${items.length} pago(s) hasta el ${dayShort(q.fin)}${B.sinFecha ? ` · ${B.sinFecha} sin fecha todavía` : ''}`),
-        stat('Ya gastado', crc(B.gastado), (B.tachado ? `Incluye ${crc(B.tachado)} de pagos tachados · ` : '') + (B.wink ? `Salario ${crc(B.gastado - B.wink)} · Wink ${crc(B.wink)} (no sale de la quincena)` : 'Todo de salario')),
-        privacy.hide ? stat('Queda libre', crc(0), 'Tocá el ojo de arriba para verlo') : stat('Queda libre', `${B.queda < 0 ? '−' : ''}${crc(Math.abs(B.queda))}`, B.queda < 0 ? `Falta para cubrir lo que hay que pagar hasta el ${dayShort(q.fin)}` : 'Libre para el resto de la quincena', B.queda < 0 ? 'var(--bad)' : 'var(--ok)')),
+        conFuente(stat('Ingreso + saldo a favor', crc(B.neto + B.saldo), ingSub), () => ({ titulo: 'Ingreso + saldo a favor', grupos: [gIng], total: B.neto + B.saldo })),
+        conFuente(stat('Por pagar', crc(B.fijos + B.deu), `${items.length} pago(s) hasta el ${dayShort(q.fin)}${B.sinFecha ? ` · ${B.sinFecha} sin fecha todavía` : ''}`), () => ({
+          titulo: 'Por pagar', grupos: [gPagar],
+          nota: `Recurrentes que vencen hasta el ${dayShort(q.fin)} y todavía no están tachados, más deudas con fecha límite hasta ese día. Lo que sale de Bank of America va aparte, en Cuentas.${B.sinFecha ? ` Hay ${B.sinFecha} recurrente(s) sin fecha que no se cuentan.` : ''}`, total: B.fijos + B.deu })),
+        conFuente(stat('Ya gastado', crc(B.gastado), (B.tachado ? `Incluye ${crc(B.tachado)} de pagos tachados · ` : '') + (B.wink ? `Salario ${crc(B.gastado - B.wink)} · Wink ${crc(B.wink)} (no sale de la quincena)` : 'Todo de salario')), () => ({
+          titulo: 'Ya gastado', nota: 'Gastos, pagos tachados y abonos desde el ' + dayShort(q.inicio) + '. Lo de Wink se muestra aparte porque se paga la quincena siguiente.',
+          grupos: [gGastado, B.wink ? { titulo: 'Con Wink (no sale de esta quincena)', total: B.wink, lineas: B.movs.filter((m) => m.fuente === 'Wink').map(movLinea) } : null], total: B.gastado })),
+        conFuente(privacy.hide ? stat('Queda libre', crc(0), 'Tocá el ojo de arriba para verlo') : stat('Queda libre', `${B.queda < 0 ? '−' : ''}${crc(Math.abs(B.queda))}`, B.queda < 0 ? `Falta para cubrir lo que hay que pagar hasta el ${dayShort(q.fin)}` : 'Libre para el resto de la quincena', B.queda < 0 ? 'var(--bad)' : 'var(--ok)'), () => ({
+          titulo: 'Queda libre', nota: 'Lo que entra, menos lo que falta pagar, menos lo ya gastado del salario.' + fondoNota(D, B.queda),
+          grupos: [gIng, gPagar, gGastado], total: B.queda }))),
+      h('p', { class: 'fx-hint' }, 'Tocá un número para ver de dónde sale.'),
+      fondoLinea(D, B.queda),
       items.length ? h('details', { class: 'pp' },
         h('summary', {}, 'Ver lo que hay que pagar'),
         h('ul', { class: 'rows' }, items.map((i) => h('li', {},
@@ -95,6 +142,13 @@ function secQuincena(ctx, D, B, hoy) {
           h('div', { class: 'main' }, i.nombre, h('span', { class: 'sub' }, `${dayShort(i.fecha)}${i.extra ? ` · ${i.extra}` : ''} · ${i.quien || 'Ambos'}`)),
           h('span', { class: 'amt' }, crc(i.monto)))))) : null),
     gen);
+}
+
+function fondoLinea(D, queda) {
+  const F = C.fondoAhorro(D);
+  if (!F.total) return null;
+  const con = queda + F.total;
+  return h('p', { class: 'fondo-l' }, h('span', {}, `Con el fondo de ahorro (${crc(F.total)})`), h('b', { style: { color: con < 0 ? 'var(--bad)' : null } }, `${con < 0 && !privacy.hide ? '−' : ''}${crc(Math.abs(con))}`));
 }
 
 const crc2 = (v) => '₡' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -144,17 +198,21 @@ function secTipos(D, B, hoy) {
 }
 
 function secMes(D) {
-  const r = C.resumenMes(C.movimientos(D));
+  const movs = C.movimientos(D);
+  const r = C.resumenMes(movs);
   const label = r.mes ? `${MESES[Number(r.mes.slice(5, 7)) - 1]} ${r.mes.slice(0, 4)}` : 'el mes';
+  const delMes = movs.filter((m) => m.fecha.slice(0, 7) === r.mes);
+  const TIPOS = [['Fijo', 'Fijo'], ['Variable', 'Variable'], ['Una vez', 'De una vez'], ['Deudas', 'Deudas pagadas'], ['Pendiente', 'Sin clasificar']];
+  const grupoTipo = (t, nombre) => { const l = delMes.filter((m) => (m.gtipo || m.tipo) === t); return { titulo: nombre, total: C.sum(l, (m) => m.monto), lineas: l.map(movLinea), vacio: 'Nada este mes.' }; };
   return h('section', { id: 'r-mes', class: 'sec' },
     h('div', { class: 'sec-head' }, h('h2', {}, `Mes de ${label}`), h('p', { class: 'note' }, `${r.n} movimiento(s)${r.n_pend ? ` · ${r.n_pend} sin clasificar` : ''}.`)),
     h('div', { class: 'tiles' },
-      tile('Total del mes', crc(r.total)),
-      tile('Fijo', crc(r.fijo), 'Suscripciones, servicios'),
-      tile('Variable', crc(r.variable), 'Mercado y similares'),
-      tile('De una vez', crc(r.una_vez)),
-      r.deudas ? tile('Deudas pagadas', crc(r.deudas), 'Pagos y abonos a deudas') : null,
-      r.pendiente ? tile('Sin clasificar', crc(r.pendiente)) : null));
+      conFuente(tile('Total del mes', crc(r.total)), () => ({ titulo: `Total de ${label}`, grupos: TIPOS.map(([t, n]) => grupoTipo(t, n)).filter((g) => g.lineas.length), total: r.total })),
+      conFuente(tile('Fijo', crc(r.fijo), 'Suscripciones, servicios'), () => ({ titulo: `Fijo · ${label}`, grupos: [grupoTipo('Fijo', 'Fijo')], total: r.fijo })),
+      conFuente(tile('Variable', crc(r.variable), 'Mercado y similares'), () => ({ titulo: `Variable · ${label}`, grupos: [grupoTipo('Variable', 'Variable')], total: r.variable })),
+      conFuente(tile('De una vez', crc(r.una_vez)), () => ({ titulo: `De una vez · ${label}`, grupos: [grupoTipo('Una vez', 'De una vez')], total: r.una_vez })),
+      r.deudas ? conFuente(tile('Deudas pagadas', crc(r.deudas), 'Pagos y abonos a deudas'), () => ({ titulo: `Deudas pagadas · ${label}`, grupos: [grupoTipo('Deudas', 'Deudas pagadas')], total: r.deudas })) : null,
+      r.pendiente ? conFuente(tile('Sin clasificar', crc(r.pendiente)), () => ({ titulo: `Sin clasificar · ${label}`, grupos: [grupoTipo('Pendiente', 'Sin clasificar')], total: r.pendiente })) : null));
 }
 
 function secVencimientos(ctx, cat, eventos, hoy) {
