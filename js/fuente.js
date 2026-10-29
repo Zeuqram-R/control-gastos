@@ -24,7 +24,7 @@ const money = (v, signo) => {
 // Hoja que sube desde abajo (sirve para el detalle de los totales y para formularios).
 export function abrirHoja({ titulo, kicker, cuerpo, onClose }) {
   document.querySelector('.sheet-bg')?.remove();
-  const cerrar = () => { bg.classList.add('out'); setTimeout(() => bg.remove(), 180); document.removeEventListener('keydown', esc); onClose && onClose(); };
+  const cerrar = () => { bg.classList.add('out'); setTimeout(() => bg.remove(), 220); document.removeEventListener('keydown', esc); onClose && onClose(); };
   const esc = (e) => { if (e.key === 'Escape') cerrar(); };
   const bg = h('div', { class: 'sheet-bg no-ptr', onclick: (e) => { if (e.target === bg) cerrar(); } },
     h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': titulo },
@@ -65,7 +65,9 @@ function gestos(bg, cerrar) {
     const now = performance.now();
     g.hist = g.hist.filter((p) => now - p.t < 100).concat({ t: now, y: dy });
     if (!g.modo) {
-      if (Math.abs(dy) < 6) { if (e.cancelable) e.preventDefault(); return; }
+      // Dentro de una lista que scrollea no se frena nada todavía: si se frena el primer movimiento, el iPhone ya no deja scrollear.
+      const listaScrollea = g.enLista && body.scrollHeight > body.clientHeight + 1;
+      if (Math.abs(dy) < 6) { if (!listaScrollea && e.cancelable) e.preventDefault(); return; }
       const sube = dy < 0;
       const cabe = body.scrollHeight <= body.clientHeight + 1;
       if (g.enLista && !cabe) {
@@ -90,7 +92,7 @@ function gestos(bg, cerrar) {
     const h0 = hist[0], h1 = hist[hist.length - 1];
     const vel = h0 && h1 && h1.t > h0.t ? (h1.y - h0.y) / (h1.t - h0.t) : 0;
     g = null;
-    sheet.style.transition = 'transform .2s ease-out, max-height .2s ease-out';
+    sheet.style.transition = 'transform .22s ease-out, max-height .22s ease-out';
     if (modo === 'bajar') {
       if (dy > 90 || vel > 0.5) { sheet.style.transform = `translateY(${alto()}px)`; cerrar(); }
       else sheet.style.transform = '';
