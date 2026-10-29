@@ -18,7 +18,7 @@ import { viewProductos, viewProducto } from './views/productos.js';
 import { viewRecurrentes, viewDeudas } from './views/pagos.js';
 import { viewFacturas } from './views/facturas.js';
 
-const APP_VERSION = '5.18';
+const APP_VERSION = '5.19';
 
 // ---------- Estado ----------
 const warmPhotos = () => { if (sync.config && sync.hasData()) setTimeout(() => preloadPhotos(sync, sync.photoPaths('fotos/mini/')), 300); };
@@ -276,11 +276,12 @@ const SIRI_TXT = {
       ['Agregá la acción "Pedir entrada".', ['Tipo de entrada: Número', 'Pregunta: ¿Cuánto fue?']],
       ['Agregá otra acción "Pedir entrada".', ['Tipo de entrada: Texto', 'Pregunta: ¿En qué?']],
       ['Agregá la acción "Lista" con las categorías, y después "Elegir de la lista".', ['Elementos: Súper, Casa, Servicios, Transporte, Salidas, Weed, Vapos, Emergencias', 'Indicación: Categoría']],
+      ['Agregá "Si" para preguntar la ruta solo en los viajes:', ['Condición: "Elemento elegido" (del paso 4) es Transporte', 'Dentro del Si: "Pedir entrada" (Texto) con la pregunta ¿De dónde a dónde? y después "Establecer variable" con el nombre Ruta', 'En "De lo contrario": "Texto" vacío y después "Establecer variable" Ruta', 'Así, si es Uber, DiDi, InDrive o taxi, te pregunta la ruta (por ejemplo "Casa a donde Jesse") y queda como Casa → Jesse.']],
       ['Agregá otra "Lista" y otro "Elegir de la lista".', ['Elementos: Salario, Wink, BofA, Préstamo, Efectivo', 'Indicación: ¿Cómo se pagó?']],
       ['Agregá "Obtener contenido de URL" y pegá esta URL:', ['@url', 'Tocá la flechita (Mostrar más). Método: POST', 'Encabezados → Agregar nuevo encabezado:', '• Authorization = Bearer + espacio + tu token (está en Contraseñas de Apple)', '• Accept =', '@accept', 'Cuerpo de la solicitud: JSON. Agregá estos campos:', '• event_type (Texto) = gasto', '• client_payload (Diccionario), y adentro:', '@campos']],
       ['Agregá "Mostrar notificación" con el texto "Gasto anotado ✓".', ['Listo. Probalo con ▶︎ en Atajos o diciéndole a Siri "Anotar gasto".']],
     ],
-    campos: (p) => [['monto', 'Número', '"Entrada proporcionada" del paso 2'], ['comercio', 'Texto', '"Entrada proporcionada" del paso 3'], ['categoria', 'Texto', '"Elemento elegido" del paso 4'], ['fuente', 'Texto', '"Elemento elegido" del paso 5'], ['quien', 'Texto', p]],
+    campos: (p) => [['monto', 'Número', '"Entrada proporcionada" del paso 2'], ['comercio', 'Texto', '"Entrada proporcionada" del paso 3'], ['categoria', 'Texto', '"Elemento elegido" del paso 4'], ['detalle', 'Texto', 'la variable Ruta del paso 5'], ['fuente', 'Texto', '"Elemento elegido" del paso 6'], ['quien', 'Texto', p]],
     final: 'Para dólares, agregá en client_payload el campo moneda = USD. El token queda guardado solo en el atajo de tu iPhone; cuando lo renovés, cambialo también ahí.',
     copiado: 'copiado', copiar: 'Copiar',
     venta: {
@@ -306,11 +307,12 @@ const SIRI_TXT = {
       ['Add the "Ask for Input" action.', ['Input Type: Number', 'Prompt: ¿Cuánto fue?']],
       ['Add another "Ask for Input" action.', ['Input Type: Text', 'Prompt: ¿En qué?']],
       ['Add a "List" action with the categories, then "Choose from List".', ['Items: Súper, Casa, Servicios, Transporte, Salidas, Weed, Vapos, Emergencias', 'Prompt: Categoría', 'Keep the names in Spanish: the app uses them as categories.']],
+      ['Add "If" so it asks for the route only on rides:', ['Condition: "Chosen Item" (from step 4) is Transporte', 'Inside If: "Ask for Input" (Text) with the prompt ¿De dónde a dónde? and then "Set Variable" named Ruta', 'In "Otherwise": an empty "Text" and then "Set Variable" Ruta', 'So for Uber, DiDi, InDrive or a taxi it asks for the route (e.g. "Casa a donde Jesse") and saves it as Casa → Jesse.']],
       ['Add another "List" and another "Choose from List".', ['Items: Salario, Wink, BofA, Préstamo, Efectivo', 'Prompt: ¿Cómo se pagó?']],
       ['Add "Get Contents of URL" and paste this URL:', ['@url', 'Tap the small arrow (Show More). Method: POST', 'Headers → Add new header:', '• Authorization = Bearer + space + your token (it’s in Apple Passwords)', '• Accept =', '@accept', 'Request Body: JSON. Add these fields:', '• event_type (Text) = gasto', '• client_payload (Dictionary), and inside it:', '@campos']],
       ['Add "Show Notification" with the text "Gasto anotado ✓".', ['Done. Test it with ▶︎ in Shortcuts or by saying "Anotar gasto" to Siri.']],
     ],
-    campos: (p) => [['monto', 'Number', '"Provided Input" from step 2'], ['comercio', 'Text', '"Provided Input" from step 3'], ['categoria', 'Text', '"Chosen Item" from step 4'], ['fuente', 'Text', '"Chosen Item" from step 5'], ['quien', 'Text', p]],
+    campos: (p) => [['monto', 'Number', '"Provided Input" from step 2'], ['comercio', 'Text', '"Provided Input" from step 3'], ['categoria', 'Text', '"Chosen Item" from step 4'], ['detalle', 'Text', 'the Ruta variable from step 5'], ['fuente', 'Text', '"Chosen Item" from step 6'], ['quien', 'Text', p]],
     final: 'For dollars, add a field moneda = USD inside client_payload. The token is stored only in the shortcut on your iPhone; when you renew it, update it there too.',
     copiado: 'copied', copiar: 'Copy',
     venta: {

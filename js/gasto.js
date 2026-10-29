@@ -6,15 +6,15 @@ import { abrirHoja } from './fuente.js';
 const FUENTES = ['Salario', 'Wink', 'BofA', 'Préstamo', 'Efectivo'];
 
 // Viajes (Uber, DiDi, taxi): el detalle queda como "origen → destino".
-// "Walmart Río Oro a la casa" → "Walmart Río Oro → casa"; "Casa a donde Jesse" → "Casa → donde Jesse".
+// "Walmart Río Oro a la casa" → "Walmart Río Oro → casa"; "Casa a donde Jesse" → "Casa → Jesse".
 const VIAJE = /^(uber|didi|indriver|in driver|taxi)\b/i;
 export function ruta(txt) {
   let t = String(txt || '').trim();
   if (!t || t.includes('→')) return t;
-  t = t.replace(/^(de|desde)\s+(la\s+|el\s+)?/i, '');
-  const m = t.match(/^(.+?)\s+(?:a|al|hacia|hasta|para|->|-)\s+(?:la\s+|el\s+)?(.+)$/i);
+  t = t.replace(/^(de|desde)\s+(la\s+|el\s+)?/i, '').replace(/^(a\s*)?donde\s+/i, '');
+  const m = t.match(/^(.+?)\s+(?:a|al|adonde|hacia|hasta|para|->|-)\s+(?:la\s+|el\s+)?(.+)$/i);
   if (!m) return t;
-  const dest = m[2].trim();
+  const dest = m[2].trim().replace(/^(a\s*)?donde\s+/i, '');
   const orig = m[1].trim();
   return `${orig.charAt(0).toUpperCase()}${orig.slice(1)} → ${/^casa\b/i.test(dest) ? dest.toLowerCase() : dest}`;
 }
