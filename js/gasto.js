@@ -1,5 +1,5 @@
 // "+ Gasto": anotar un gasto sin factura (SINPE, Uber, efectivo, la feria…) en segundos.
-import { h, crc, usd, todayCR, addDays, dayShort } from './ui.js';
+import { h, crc, usd, todayCR, addDays, dayShort, nombrePropio } from './ui.js';
 import * as C from './calc.js';
 import { abrirHoja } from './fuente.js';
 
@@ -10,13 +10,13 @@ const FUENTES = ['Salario', 'Wink', 'BofA', 'Préstamo', 'Efectivo'];
 const VIAJE = /^(uber|didi|indriver|in driver|taxi)\b/i;
 export function ruta(txt) {
   let t = String(txt || '').trim();
-  if (!t || t.includes('→')) return t;
+  if (!t) return t;
+  if (t.includes('→')) return t.split('→').map((x) => nombrePropio(x)).join(' → ');
   t = t.replace(/^(de|desde)\s+(la\s+|el\s+)?/i, '').replace(/^(a\s*)?donde\s+/i, '');
   const m = t.match(/^(.+?)\s+(?:a|al|adonde|hacia|hasta|para|->|-)\s+(?:la\s+|el\s+)?(.+)$/i);
   if (!m) return t;
   const dest = m[2].trim().replace(/^(a\s*)?donde\s+/i, '');
-  const orig = m[1].trim();
-  return `${orig.charAt(0).toUpperCase()}${orig.slice(1)} → ${/^casa\b/i.test(dest) ? dest.toLowerCase() : dest}`;
+  return `${nombrePropio(m[1])} → ${nombrePropio(dest)}`;
 }
 const TIPOS = [['Variable', 'Variable', 'Súper, comida, transporte…'], ['Una vez', 'De una vez', 'Algo puntual']];
 
@@ -89,7 +89,7 @@ export function abrirGasto(ctx, pre = {}) {
     const montoCRC = st.moneda === 'USD' ? Math.round(n * Number(tc.venta)) : Math.round(n);
     const id = `GM-${Date.now().toString(36)}`;
     const rec = {
-      id, fecha: st.fecha, comercio: st.comercio.trim(), categoria: st.categoria, subcategoria: VIAJE.test(st.comercio.trim()) ? st.comercio.trim().replace(/^\w/, (c) => c.toUpperCase()) : '',
+      id, fecha: st.fecha, comercio: nombrePropio(st.comercio), categoria: st.categoria, subcategoria: VIAJE.test(st.comercio.trim()) ? st.comercio.trim().replace(/^\w/, (c) => c.toUpperCase()) : '',
       descripcion: VIAJE.test(st.comercio.trim()) ? ruta(st.desc) : st.desc.trim(), monto: montoCRC, tipo: st.tipo, fuente: st.fuente, metodo_pago: st.fuente === 'Efectivo' ? 'Efectivo' : '',
       nota: [`Anotado en la app por ${cfg.persona}`, st.quien !== cfg.persona ? `pagó ${st.quien}` : null, st.moneda === 'USD' ? `${usd(n)} al tipo de cambio de ${crc(Number(tc.venta))}` : null].filter(Boolean).join(' · '),
       quien_pago: st.quien,

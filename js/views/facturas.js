@@ -1,5 +1,5 @@
 // Página Facturas: subir fotos de facturas, ver cómo van, y contestar las preguntas de Claude.
-import { h, crc, todayCR, dayShort, empty, ago } from '../ui.js';
+import { h, crc, todayCR, dayShort, empty, ago, nombrePropio } from '../ui.js';
 import { textToB64 } from '../github.js';
 
 const fstate = { files: [], lugar: '', fuente: 'Salario', quien: null, nota: '', subiendo: false, respuestas: {}, negocio: false };
@@ -63,7 +63,7 @@ export function viewFacturas(ctx) {
         nombres.push(name);
         files.push({ path: `bandeja/${id}/${name}`, b64: await blobToB64(blob) });
       }
-      const ficha = { id, subida: new Date().toISOString(), subido_por: cfg.persona, dispositivo: cfg.dispositivo, lugar: fstate.lugar.trim(), fuente: fstate.fuente, quien_pago: fstate.quien, nota: fstate.nota.trim(), archivos: nombres, ...(fstate.negocio ? { negocio: 'Santo Coco' } : {}) };
+      const ficha = { id, subida: new Date().toISOString(), subido_por: cfg.persona, dispositivo: cfg.dispositivo, lugar: nombrePropio(fstate.lugar), fuente: fstate.fuente, quien_pago: fstate.quien, nota: fstate.nota.trim(), archivos: nombres, ...(fstate.negocio ? { negocio: 'Santo Coco' } : {}) };
       files.push({ path: `bandeja/${id}/factura.json`, b64: textToB64(JSON.stringify(ficha, null, 1) + '\n') });
       const resumen = `${ficha.lugar || 'Factura'} · ${nombres.length} foto(s) · ${ficha.fuente}`;
       await sync.subir(files, `${cfg.persona} (${cfg.dispositivo}): factura ${resumen}`, { resumen, id });

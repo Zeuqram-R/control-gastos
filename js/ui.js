@@ -225,3 +225,17 @@ export async function achicarFoto(file, max = 1200, q = 0.82) {
   return new Promise((r) => c.toBlob(r, 'image/jpeg', q));
 }
 export const blobABase64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
+
+// Nombres y lugares con mayúscula inicial ("walmart rio oro" → "Walmart Rio Oro", "casa jose" → "Casa Jose").
+// Lo que viene todo en MAYÚSCULAS se deja igual ("EPA"). Las palabras de enlace (de, la, del…) van en minúscula salvo al inicio.
+const ENLACES = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e', 'a', 'al', 'en', 'con', 'por', 'para']);
+export function nombrePropio(txt) {
+  const t = String(txt || '').trim().replace(/\s+/g, ' ');
+  if (!t) return t;
+  return t.split(' ').map((w, i) => {
+    if (w.length > 1 && w === w.toUpperCase() && /\p{L}/u.test(w)) return w; // sigla o todo en mayúscula
+    const low = w.toLowerCase();
+    if (i > 0 && ENLACES.has(low)) return low;
+    return low.charAt(0).toUpperCase() + low.slice(1);
+  }).join(' ');
+}

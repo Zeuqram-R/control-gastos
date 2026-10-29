@@ -1,5 +1,5 @@
 // Páginas Recurrentes y Deudas, más el "tachar con 5 segundos para deshacer" que comparten.
-import { h, crc, usd, todayCR, dayShort, daysBetween, empty, MESES } from '../ui.js';
+import { h, crc, usd, todayCR, dayShort, daysBetween, empty, MESES, nombrePropio } from '../ui.js';
 import * as C from '../calc.js';
 import { secCuentas } from './resumen.js';
 
@@ -379,7 +379,7 @@ function formDeuda(ctx, B) {
     const monto = Number(String(fstate.monto).replace(/[^\d.]/g, ''));
     if (!fstate.persona.trim() || !fstate.concepto.trim() || !monto) { err.textContent = 'Falta la persona, el concepto o el monto.'; err.hidden = false; return; }
     const id = `D${Date.now().toString(36).toUpperCase()}`;
-    await sync.mutate('deudas', { kind: 'upsert', record: { id, persona: fstate.persona.trim(), direccion: fstate.dir, de_quien: fstate.quien, concepto: fstate.concepto.trim(), monto, moneda: fstate.moneda, fecha_limite: fstate.fecha || '', estado: 'pendiente', nota: `Agregada desde la app por ${sync.config.persona}` } }, `nueva deuda: ${fstate.persona.trim()} · ${fstate.concepto.trim()}`);
+    await sync.mutate('deudas', { kind: 'upsert', record: { id, persona: nombrePropio(fstate.persona), direccion: fstate.dir, de_quien: fstate.quien, concepto: fstate.concepto.trim(), monto, moneda: fstate.moneda, fecha_limite: fstate.fecha || '', estado: 'pendiente', nota: `Agregada desde la app por ${sync.config.persona}` } }, `nueva deuda: ${fstate.persona.trim()} · ${fstate.concepto.trim()}`);
     Object.assign(fstate, { persona: '', concepto: '', monto: '', fecha: '' });
     dstate.form = false;
     toast('Deuda agregada.');
