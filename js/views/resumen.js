@@ -503,8 +503,8 @@ export function viewCategoria(ctx) {
   const { q } = B;
   const general = cat === 'General';
   const delCat = C.movimientos(D).filter((m) => general || m.categoria === cat);
-  // En orden de cómo pasaron: del más viejo al más nuevo (en el mismo día, en el orden en que se anotaron).
-  const enOrden = (l) => l.slice().sort((a, b) => a.fecha.localeCompare(b.fecha));
+  // Lo más nuevo arriba: del más nuevo al más viejo (en el mismo día, lo último que se anotó va primero).
+  const enOrden = (l) => l.slice().sort((a, b) => a.fecha.localeCompare(b.fecha)).reverse();
   const items = enOrden(delCat.filter((m) => m.fecha >= q.inicio && m.fecha <= q.fin))
     .map((m) => ({ ...m, sub: [m.sub, general ? m.categoria : null, m.fuente].filter(Boolean).join(' · ') }));
   const total = C.sum(items, (i) => i.monto);
