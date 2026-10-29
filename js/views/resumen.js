@@ -274,13 +274,13 @@ export function secVencimientos(ctx, cat, eventos, hoy) {
   const v = state.todoVenc ? all : all.slice(0, 6);
   return h('section', { id: 'r-venc', class: 'card sec' },
     h('h2', {}, 'Perecederos en casa'),
-    h('p', { class: 'note' }, 'Vencimiento estimado desde la última compra. Avisame si algo se terminó, lo congelaron, lo cocinaron o lo botaron.'),
+    h('p', { class: 'note' }, 'Vencimiento estimado desde la última compra (o desde que lo guardaron en la refri). En el perfil de cada producto avisás si se acabó, lo guardaron en la refri, lo congelaron, lo cocinaron o lo botaron.'),
     v.length ? h('ul', { class: 'rows' }, v.map((r) => {
       const dias = daysBetween(hoy, r.vence);
       const when = dias < 0 ? `Venció hace ${-dias} día${dias === -1 ? '' : 's'}` : dias === 0 ? 'Vence hoy' : dias === 1 ? 'Vence mañana' : `Vence en ${dias} días`;
       return h('li', { class: 'tap', onclick: () => ctx.openProduct(r.clave) },
         thumb(sync, r.clave, { open: true, title: r.producto }),
-        h('div', { class: 'main' }, r.producto, h('span', { class: 'sub' }, `${r.sobras ? `Sobras cocinadas el ${dayShort(r.desde)}` : `Comprado ${dayShort(r.ultima)}`} · dura ~${r.dias} días${r.ubicacion ? ` · ${r.ubicacion}` : ''}`)),
+        h('div', { class: 'main' }, r.producto, h('span', { class: 'sub' }, `${r.sobras ? `Sobras cocinadas el ${dayShort(r.desde)}` : r.refri ? `En la refri desde el ${dayShort(r.desde)}` : `Comprado ${dayShort(r.ultima)}`} · dura ~${r.dias} días${r.ubicacion ? ` · ${r.ubicacion}` : ''}`)),
         h('span', { class: 'when', style: { color: dias <= 0 ? 'var(--bad)' : dias <= 2 ? 'var(--warn)' : 'var(--muted)' } }, when));
     })) : empty('No hay perecederos pendientes.'),
     all.length > v.length ? more(all.length - v.length, 'todoVenc', ctx.rerender) : null);

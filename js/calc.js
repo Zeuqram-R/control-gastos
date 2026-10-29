@@ -368,7 +368,7 @@ export function catalogo(compras, productos) {
       n_supers: ultimos.length, ahorro: peor.p - mejor.p, gasto_total: sum(orden, (d) => d.total), iva: Number(orden[orden.length - 1].iva_pct) || null,
       otros_nombres: p.otros_nombres || [], nombres_lugar: p.nombres_lugar || [], alternativa: p.alternativa_1 || '',
       dueno: p.dueno || 'Casa', ubicacion: p.ubicacion || '', unidad: orden[0].unidad,
-      perecedero: p.perecedero === true || p.perecedero === 'si', vida_util_dias: Number(p.vida_util_dias) || null,
+      perecedero: p.perecedero === true || p.perecedero === 'si', vida_util_dias: Number(p.vida_util_dias) || null, vida_refri_dias: Number(p.vida_refri_dias) || null,
       compras: fechas.length, primera: fechas[0], ultima: fechas[fechas.length - 1],
       mejor_precio: mejor.p, mejor_ref: Math.round(mejor.ref.v), ref_u: mejor.ref.u, mejor_super: mejor.s,
       cambio_pct: first ? (last - first) / first : 0,
@@ -387,9 +387,10 @@ export function vencimientos(cat, eventos) {
     const last = evs[evs.length - 1];
     const tipo = last ? String(last.evento).toLowerCase() : '';
     if (['terminado', 'congelado', 'botado'].includes(tipo)) continue;
-    const desde = tipo === 'cocinado' ? d10(last.fecha) : p.ultima;
-    const dias = tipo === 'cocinado' ? (Number(last.vida_dias) || 3) : p.vida_util_dias;
-    out.push({ ...p, sobras: tipo === 'cocinado', desde, dias, vence: addDays(desde, dias) });
+    const desdeEv = tipo === 'cocinado' || tipo === 'refrigerado';
+    const desde = desdeEv ? d10(last.fecha) : p.ultima;
+    const dias = tipo === 'cocinado' ? (Number(last.vida_dias) || 3) : tipo === 'refrigerado' ? (Number(last.vida_dias) || p.vida_refri_dias || p.vida_util_dias) : p.vida_util_dias;
+    out.push({ ...p, sobras: tipo === 'cocinado', refri: tipo === 'refrigerado', desde, dias, vence: addDays(desde, dias) });
   }
   return out.sort((a, b) => a.vence.localeCompare(b.vence));
 }
@@ -415,10 +416,11 @@ export function listaCompras(compras, cat, eventos, lista, hoy) {
     const dura = durs.length ? Math.round(mean(durs)) : p.cada_dias;
     if (dura) { const f = addDays(p.ultima, dura); if (f <= lim7) put(p.clave, { ...base, pr: 1, motivo: 'pronto', detalle: `Suele durar ~${dura} días`, fecha: f }); }
     if (p.perecedero && p.vida_util_dias) {
-      const desde = tipo === 'cocinado' ? d10(last.fecha) : p.ultima;
-      const dias = tipo === 'cocinado' ? (Number(last.vida_dias) || 3) : p.vida_util_dias;
+      const desdeEv = tipo === 'cocinado' || tipo === 'refrigerado';
+      const desde = desdeEv ? d10(last.fecha) : p.ultima;
+      const dias = tipo === 'cocinado' ? (Number(last.vida_dias) || 3) : tipo === 'refrigerado' ? (Number(last.vida_dias) || p.vida_refri_dias || p.vida_util_dias) : p.vida_util_dias;
       const f = addDays(desde, dias);
-      if (f <= lim3) put(p.clave, { ...base, pr: 1, motivo: 'vence', detalle: `${tipo === 'cocinado' ? 'Las sobras vencen' : 'Vence'} aprox. el ${f}`, fecha: f });
+      if (f <= lim3) put(p.clave, { ...base, pr: 1, motivo: 'vence', detalle: `${tipo === 'cocinado' ? 'Las sobras vencen' : tipo === 'refrigerado' ? 'En la refri, vence' : 'Vence'} aprox. el ${f}`, fecha: f });
     }
   }
   for (const l of lista.filter((x) => (x.tipo || 'pedido') === 'pedido')) {

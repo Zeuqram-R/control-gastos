@@ -1,6 +1,7 @@
 // Página Productos (catálogo, comparar lugares) y perfil de cada producto.
-import { h, crc, pct, todayCR, dayShort, thumb, openPhoto, empty, stat } from '../ui.js';
+import { h, crc, pct, todayCR, dayShort, addDays, thumb, openPhoto, empty, stat } from '../ui.js';
 import * as C from '../calc.js';
+import { abrirHoja } from '../fuente.js';
 import { secVencimientos, secSuper, secIva, secCompras } from './resumen.js';
 
 const state = { buscar: '', dueno: '', orden: 'nombre' };
@@ -138,6 +139,25 @@ export function viewProducto(ctx) {
     await sync.mutate('eventos', { kind: 'upsert', record: rec }, `${p.producto}: ${EV_TXT[tipo].toLowerCase()}`);
     toast(`Anotado: ${EV_TXT[tipo]}`, { label: 'Deshacer', fn: () => sync.mutate('eventos', { kind: 'delete', id: rec.id }, `deshace: ${p.producto}`) });
   };
+  // "Lo guardamos en la refri": cuenta los días que dura en la refri desde hoy (se pueden ajustar).
+  const guardarRefri = () => {
+    const sug = p.vida_refri_dias || p.vida_util_dias || 7;
+    const dias = h('input', { class: 'input big-num', id: 'refri-dias', inputmode: 'numeric', autocomplete: 'off' });
+    dias.value = String(sug);
+    const venceTxt = h('p', { class: 'note', style: { margin: '6px 0 0' } });
+    const pintar = () => { const n = Math.max(1, Number(dias.value) || 0); venceTxt.textContent = `Vencería aprox. el ${dayShort(addDays(hoy, n))}.`; };
+    dias.addEventListener('input', pintar); pintar();
+    const cerrar = abrirHoja({ titulo: 'Guardado en la refri', kicker: p.producto, cuerpo: [
+      h('p', { class: 'note' }, p.vida_refri_dias ? `En la refri suele durar unos ${p.vida_refri_dias} días. Si ya está abierto o muy maduro, poné menos.` : 'Todavía no tengo cuánto dura este en la refri; poné tu mejor estimado y queda guardado para la próxima.'),
+      h('div', { class: 'field' }, h('label', { for: 'refri-dias' }, '¿Cuántos días dura en la refri?'), dias, venceTxt),
+      h('button', { type: 'button', class: 'btn block', onclick: async () => {
+        const n = Math.max(1, Math.round(Number(dias.value) || 0));
+        if (!p.vida_refri_dias) await sync.mutate('productos', { kind: 'patch', record: { id: clave, vida_refri_dias: n } }, `${p.producto}: dura ${n} días en la refri`);
+        cerrar();
+        await evento('refrigerado', { vida_dias: n });
+      } }, 'Guardar'),
+    ] });
+  };
   const enLista = sync.data('lista').some((l) => (l.tipo || 'pedido') === 'pedido' && l.clave === clave && String(l.fecha) > p.ultima);
 
   const dur = C.duraciones(D.compras, D.eventos, clave);
@@ -164,6 +184,7 @@ export function viewProducto(ctx) {
       h('h2', {}, '¿Qué pasó con él?'),
       h('p', { class: 'note' }, 'Avisá aquí y se actualizan la lista y los perecederos (antes había que decírmelo a mí).'),
       h('div', { class: 'ev-btns' },
+        h('button', { type: 'button', class: 'btn secondary wide', onclick: () => guardarRefri() }, '🧊 Lo guardamos en la refri'),
         h('button', { type: 'button', class: 'btn secondary', onclick: () => evento('terminado') }, 'Se acabó'),
         h('button', { type: 'button', class: 'btn secondary', onclick: () => evento('congelado') }, 'Lo congelamos'),
         h('button', { type: 'button', class: 'btn secondary', onclick: () => evento('cocinado', { vida_dias: 3 }) }, 'Lo cocinamos'),
@@ -212,7 +233,7 @@ export function viewProducto(ctx) {
   ];
 }
 
-const EV_TXT = { terminado: 'Se acabó', congelado: 'Se congeló', cocinado: 'Se cocinó', botado: 'Se botó' };
+const EV_TXT = { terminado: 'Se acabó', congelado: 'Se congeló', refrigerado: 'Se guardó en la refri', cocinado: 'Se cocinó', botado: 'Se botó' };
 
 // Gráfico de precio en el tiempo, una línea por lugar (SVG sencillo, sin librerías).
 function priceChart(rows) {

@@ -615,3 +615,4 @@ mark.hl { background: color-mix(in srgb, #f2c94c 55%, transparent); color: inher
 .deseo-foto-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .big-thumb { width: 84px; height: 84px; }
 .deseo-img .thumb img, .big-thumb img { object-fit: cover; }
+.ev-btns .wide { grid-column: 1 / -1; }
