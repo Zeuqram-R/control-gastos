@@ -34,7 +34,72 @@ export function abrirHoja({ titulo, kicker, cuerpo, onClose }) {
       h('div', { class: 'sheet-body' }, cuerpo)));
   document.body.append(bg);
   document.addEventListener('keydown', esc);
+  gestos(bg, cerrar);
   return cerrar;
+}
+
+// Gestos de la hoja (el resumen de atrás nunca se mueve mientras está abierta):
+// · tocar lo de atrás → cierra
+// · deslizar hacia abajo (fuera de la lista, o con la lista arriba del todo) → cierra
+// · deslizar hacia arriba fuera de la lista → la hoja crece si tiene más que mostrar; si no, no pasa nada
+function gestos(bg, cerrar) {
+  const sheet = bg.querySelector('.sheet');
+  const body = bg.querySelector('.sheet-body');
+  const alto = () => sheet.getBoundingClientRect().height;
+  const maxAlto = () => {
+    const cabeza = sheet.querySelector('.sheet-h').offsetHeight;
+    const pie = parseFloat(getComputedStyle(sheet).paddingBottom) || 0;
+    return Math.min(cabeza + body.scrollHeight + pie, innerHeight * 0.92);
+  };
+  let g = null;
+  bg.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { g = null; return; }
+    const t = e.touches[0];
+    g = { y0: t.clientY, x0: t.clientX, enLista: body.contains(e.target), top0: body.scrollTop, modo: null, dy: 0, hist: [], alto0: alto() };
+  }, { passive: true });
+  bg.addEventListener('touchmove', (e) => {
+    if (!g) return;
+    const t = e.touches[0];
+    const dy = t.clientY - g.y0;
+    g.dy = dy;
+    const now = performance.now();
+    g.hist = g.hist.filter((p) => now - p.t < 100).concat({ t: now, y: dy });
+    if (!g.modo) {
+      if (Math.abs(dy) < 6) { if (e.cancelable) e.preventDefault(); return; }
+      const sube = dy < 0;
+      const cabe = body.scrollHeight <= body.clientHeight + 1;
+      if (g.enLista && !cabe) {
+        const arriba = body.scrollTop <= 0;
+        const abajo = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+        if (!sube && arriba) g.modo = 'bajar';
+        else if (sube && abajo) g.modo = 'quieto';
+        else g.modo = 'lista'; // la lista se mueve sola
+      } else {
+        g.modo = sube ? (maxAlto() > g.alto0 + 4 ? 'crecer' : 'quieto') : 'bajar';
+      }
+      if (g.modo === 'bajar' || g.modo === 'crecer') sheet.style.transition = 'none';
+    }
+    if (g.modo === 'lista') return;
+    if (e.cancelable) e.preventDefault();
+    if (g.modo === 'bajar') sheet.style.transform = `translateY(${Math.max(0, dy)}px)`;
+    else if (g.modo === 'crecer') sheet.style.maxHeight = `${Math.min(maxAlto(), g.alto0 - dy)}px`;
+  }, { passive: false });
+  const soltar = () => {
+    if (!g) return;
+    const { modo, dy, hist } = g;
+    const h0 = hist[0], h1 = hist[hist.length - 1];
+    const vel = h0 && h1 && h1.t > h0.t ? (h1.y - h0.y) / (h1.t - h0.t) : 0;
+    g = null;
+    sheet.style.transition = 'transform .2s ease-out, max-height .2s ease-out';
+    if (modo === 'bajar') {
+      if (dy > 90 || vel > 0.5) { sheet.style.transform = `translateY(${alto()}px)`; cerrar(); }
+      else sheet.style.transform = '';
+    } else if (modo === 'crecer') {
+      sheet.style.maxHeight = (-dy > 40 || vel < -0.4) ? `${maxAlto()}px` : '';
+    }
+  };
+  bg.addEventListener('touchend', soltar);
+  bg.addEventListener('touchcancel', soltar);
 }
 
 export function abrirFuente({ titulo, nota, grupos = [], total, totalLbl }) {
