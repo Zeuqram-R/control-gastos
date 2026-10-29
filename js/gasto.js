@@ -7,7 +7,10 @@ const FUENTES = ['Salario', 'Wink', 'BofA', 'Préstamo', 'Efectivo'];
 
 // Viajes (Uber, DiDi, taxi): el detalle queda como "origen → destino".
 // "Walmart Río Oro a la casa" → "Walmart Río Oro → casa"; "Casa a donde Jesse" → "Casa → Jesse".
-const VIAJE = /^(uber|didi|indriver|in driver|taxi)\b/i;
+const VIAJE = /^(uber|didi|indrive|indriver|in[ -]drive|in driver|taxi|bus|autob[uú]s|buseta|tren)\b/i;
+// Gasolina: no lleva ruta; se marca para ver cuánto se va cuando les prestan el carro.
+const GASOLINA = /(gasolin|combustible|bomba|servicentro|estaci[oó]n de servicio|\bdelta\b|\bpuma\b|\buno\b|\btotal\b|\bgulf\b)/i;
+const subViaje = (c) => (/^(bus|autob[uú]s|buseta)/i.test(c) ? 'Bus' : /^tren/i.test(c) ? 'Tren' : /^taxi/i.test(c) ? 'Taxi' : /^didi/i.test(c) ? 'DiDi' : /^in/i.test(c) ? 'InDrive' : 'Uber');
 export function ruta(txt) {
   let t = String(txt || '').trim();
   if (!t) return t;
@@ -66,7 +69,7 @@ export function abrirGasto(ctx, pre = {}) {
       if (prev.tipo === 'Variable' || prev.tipo === 'Una vez') { st.tipo = prev.tipo; tipoSeg.paint(); }
     }
   } });
-  const descIn = h('input', { class: 'input', id: 'g-desc', placeholder: 'Opcional · en Uber: de dónde a dónde (Casa a Walmart)', autocomplete: 'off', oninput: (e) => { st.desc = e.target.value; } });
+  const descIn = h('input', { class: 'input', id: 'g-desc', placeholder: 'Opcional · en Uber, DiDi, InDrive, taxi o bus: de dónde a dónde (Casa a Walmart)', autocomplete: 'off', oninput: (e) => { st.desc = e.target.value; } });
   const tipoSeg = seg('tipo', TIPOS.map(([v, t]) => [v, t]));
   const fechaIn = h('input', { class: 'input', id: 'g-fecha', type: 'date', value: hoy, max: hoy, onchange: (e) => { st.fecha = e.target.value || hoy; diaSeg.paint(); } });
   const diaSeg = (() => {
@@ -89,7 +92,7 @@ export function abrirGasto(ctx, pre = {}) {
     const montoCRC = st.moneda === 'USD' ? Math.round(n * Number(tc.venta)) : Math.round(n);
     const id = `GM-${Date.now().toString(36)}`;
     const rec = {
-      id, fecha: st.fecha, comercio: nombrePropio(st.comercio), categoria: st.categoria, subcategoria: VIAJE.test(st.comercio.trim()) ? st.comercio.trim().replace(/^\w/, (c) => c.toUpperCase()) : '',
+      id, fecha: st.fecha, comercio: VIAJE.test(st.comercio.trim()) && !/\s/.test(st.comercio.trim()) ? subViaje(st.comercio.trim()) : nombrePropio(st.comercio), categoria: st.categoria, subcategoria: VIAJE.test(st.comercio.trim()) ? subViaje(st.comercio.trim()) : (st.categoria === 'Transporte' && GASOLINA.test(st.comercio)) ? 'Gasolina' : '',
       descripcion: VIAJE.test(st.comercio.trim()) ? ruta(st.desc) : st.desc.trim(), monto: montoCRC, tipo: st.tipo, fuente: st.fuente, metodo_pago: st.fuente === 'Efectivo' ? 'Efectivo' : '',
       nota: [`Anotado en la app por ${cfg.persona}`, st.quien !== cfg.persona ? `pagó ${st.quien}` : null, st.moneda === 'USD' ? `${usd(n)} al tipo de cambio de ${crc(Number(tc.venta))}` : null].filter(Boolean).join(' · '),
       quien_pago: st.quien,
