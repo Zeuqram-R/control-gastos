@@ -503,7 +503,9 @@ export function viewCategoria(ctx) {
   const { q } = B;
   const general = cat === 'General';
   const delCat = C.movimientos(D).filter((m) => general || m.categoria === cat);
-  const items = delCat.filter((m) => m.fecha >= q.inicio && m.fecha <= q.fin)
+  // En orden de cómo pasaron: del más viejo al más nuevo (en el mismo día, en el orden en que se anotaron).
+  const enOrden = (l) => l.slice().sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const items = enOrden(delCat.filter((m) => m.fecha >= q.inicio && m.fecha <= q.fin))
     .map((m) => ({ ...m, sub: [m.sub, general ? m.categoria : null, m.fuente].filter(Boolean).join(' · ') }));
   const total = C.sum(items, (i) => i.monto);
   const pasadas = [...C.groupBy(delCat.filter((g) => g.fecha < q.inicio), (g) => C.quincenaDe(g.fecha).inicio)].sort((a, b) => b[0].localeCompare(a[0]));
@@ -521,7 +523,7 @@ export function viewCategoria(ctx) {
       h('h2', {}, 'Quincenas anteriores'),
       pasadas.map(([ini, gs]) => h('details', { class: 'pp' },
         h('summary', {}, `${dayShort(ini)} – ${dayShort(C.quincenaDe(ini).fin)} · ${crc(C.sum(gs, (g) => g.monto))}`),
-        h('ul', { class: 'rows' }, gs.map((g) => row({ ...g, sub: [g.sub, g.fuente].filter(Boolean).join(' · ') })))))) : null,
+        h('ul', { class: 'rows' }, enOrden(gs).map((g) => row({ ...g, sub: [g.sub, g.fuente].filter(Boolean).join(' · ') })))))) : null,
   ];
 }
 

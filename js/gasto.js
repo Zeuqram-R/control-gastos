@@ -4,6 +4,20 @@ import * as C from './calc.js';
 import { abrirHoja } from './fuente.js';
 
 const FUENTES = ['Salario', 'Wink', 'BofA', 'Préstamo', 'Efectivo'];
+
+// Viajes (Uber, DiDi, taxi): el detalle queda como "origen → destino".
+// "Walmart Río Oro a la casa" → "Walmart Río Oro → casa"; "Casa a donde Jesse" → "Casa → donde Jesse".
+const VIAJE = /^(uber|didi|indriver|in driver|taxi)\b/i;
+export function ruta(txt) {
+  let t = String(txt || '').trim();
+  if (!t || t.includes('→')) return t;
+  t = t.replace(/^(de|desde)\s+(la\s+|el\s+)?/i, '');
+  const m = t.match(/^(.+?)\s+(?:a|al|hacia|hasta|para|->|-)\s+(?:la\s+|el\s+)?(.+)$/i);
+  if (!m) return t;
+  const dest = m[2].trim();
+  const orig = m[1].trim();
+  return `${orig.charAt(0).toUpperCase()}${orig.slice(1)} → ${/^casa\b/i.test(dest) ? dest.toLowerCase() : dest}`;
+}
 const TIPOS = [['Variable', 'Variable', 'Súper, comida, transporte…'], ['Una vez', 'De una vez', 'Algo puntual']];
 
 export function abrirGasto(ctx, pre = {}) {
@@ -52,7 +66,7 @@ export function abrirGasto(ctx, pre = {}) {
       if (prev.tipo === 'Variable' || prev.tipo === 'Una vez') { st.tipo = prev.tipo; tipoSeg.paint(); }
     }
   } });
-  const descIn = h('input', { class: 'input', id: 'g-desc', placeholder: 'Opcional', autocomplete: 'off', oninput: (e) => { st.desc = e.target.value; } });
+  const descIn = h('input', { class: 'input', id: 'g-desc', placeholder: 'Opcional · en Uber: de dónde a dónde (Casa a Walmart)', autocomplete: 'off', oninput: (e) => { st.desc = e.target.value; } });
   const tipoSeg = seg('tipo', TIPOS.map(([v, t]) => [v, t]));
   const fechaIn = h('input', { class: 'input', id: 'g-fecha', type: 'date', value: hoy, max: hoy, onchange: (e) => { st.fecha = e.target.value || hoy; diaSeg.paint(); } });
   const diaSeg = (() => {
@@ -75,8 +89,8 @@ export function abrirGasto(ctx, pre = {}) {
     const montoCRC = st.moneda === 'USD' ? Math.round(n * Number(tc.venta)) : Math.round(n);
     const id = `GM-${Date.now().toString(36)}`;
     const rec = {
-      id, fecha: st.fecha, comercio: st.comercio.trim(), categoria: st.categoria, subcategoria: '',
-      descripcion: st.desc.trim(), monto: montoCRC, tipo: st.tipo, fuente: st.fuente, metodo_pago: st.fuente === 'Efectivo' ? 'Efectivo' : '',
+      id, fecha: st.fecha, comercio: st.comercio.trim(), categoria: st.categoria, subcategoria: VIAJE.test(st.comercio.trim()) ? st.comercio.trim().replace(/^\w/, (c) => c.toUpperCase()) : '',
+      descripcion: VIAJE.test(st.comercio.trim()) ? ruta(st.desc) : st.desc.trim(), monto: montoCRC, tipo: st.tipo, fuente: st.fuente, metodo_pago: st.fuente === 'Efectivo' ? 'Efectivo' : '',
       nota: [`Anotado en la app por ${cfg.persona}`, st.quien !== cfg.persona ? `pagó ${st.quien}` : null, st.moneda === 'USD' ? `${usd(n)} al tipo de cambio de ${crc(Number(tc.venta))}` : null].filter(Boolean).join(' · '),
       quien_pago: st.quien,
       ...(st.negocio ? { negocio: C.NEGOCIO } : {}),
