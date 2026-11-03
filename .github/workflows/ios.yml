@@ -1,0 +1,61 @@
+name: App de iPhone
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', 'js/calc.js', 'js/ops.js', 'js/ui.js', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Núcleo JS (calc.js) para JavaScriptCore
+        run: npx --yes esbuild@0.24.0 ios/core/core.js --bundle --format=iife --target=es2020 --outfile=ios/Gastos/Resources/core.js
+
+      - name: Proyecto de Xcode
+        run: |
+          brew install xcodegen
+          cd ios
+          sed -i '' "s/CURRENT_PROJECT_VERSION: \"1\"/CURRENT_PROJECT_VERSION: \"${GITHUB_RUN_NUMBER}\"/" project.yml
+          xcodegen generate
+          xcodebuild -version
+
+      - name: Compilar (sin firmar)
+        run: |
+          set -o pipefail
+          cd ios
+          xcodebuild -project Gastos.xcodeproj -scheme Gastos -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
+          test -d build/Build/Products/Release-iphoneos/Gastos.app || {
+            grep -E "error:" build.log | sort -u | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          }
+
+      - name: Armar .ipa
+        run: |
+          cd ios
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Gastos.app Payload/
+          zip -qry Gastos.ipa Payload
+          ls -lh Gastos.ipa
+
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" ios/Gastos.ipa --title "Gastos para iPhone (build ${GITHUB_RUN_NUMBER})" \
+            --notes "Instalar con Signulous. Commit ${GITHUB_SHA::7}." --latest
