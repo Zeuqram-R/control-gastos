@@ -53,6 +53,9 @@ final class LockManager: ObservableObject {
         if locked { unlock() }
     }
 
+    /// Recién instalada (sin conectar) no se bloquea: el primer Face ID sale la próxima vez que se abra.
+    func skip() { locked = false }
+
     func unlock() {
         guard locked, !authenticating else { return }
         guard LockManager.available else { locked = false; return }

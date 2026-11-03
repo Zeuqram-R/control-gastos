@@ -48,7 +48,7 @@ struct RootView: View {
                 LockScreen().transition(.opacity).zIndex(10)
             }
         }
-        .onAppear { if lock.locked { lock.unlock() } }
+        .onAppear { if !sync.connected { lock.skip() } else if lock.locked { lock.unlock() } }
     }
 }
 
