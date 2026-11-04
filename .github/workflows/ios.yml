@@ -48,7 +48,9 @@ jobs:
         run: |
           cd ios
           VER=$(grep -E '^ *MARKETING_VERSION:' project.yml | head -1 | sed -E 's/.*"(.*)".*/\1/')
-          NOMBRE="Gastos_${VER}(${GITHUB_RUN_NUMBER}).ipa"
+          # GitHub no deja paréntesis en el nombre del archivo: se baja como Gastos_0.2-6.ipa y en la página sale como Gastos_0.2(6).ipa.
+          NOMBRE="Gastos_${VER}-${GITHUB_RUN_NUMBER}.ipa"
+          echo "ETIQUETA=Gastos_${VER}(${GITHUB_RUN_NUMBER}).ipa" >> "$GITHUB_ENV"
           echo "NOMBRE=$NOMBRE" >> "$GITHUB_ENV"
           echo "VER=$VER" >> "$GITHUB_ENV"
           mkdir -p Payload
@@ -61,5 +63,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="ios-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" "ios/$NOMBRE" --title "Gastos ${VER} (${GITHUB_RUN_NUMBER})" \
+          gh release create "$TAG" "ios/$NOMBRE#$ETIQUETA" --title "Gastos ${VER} (${GITHUB_RUN_NUMBER})" \
             --notes "Instalar con Signulous. Commit ${GITHUB_SHA::7}." --latest
