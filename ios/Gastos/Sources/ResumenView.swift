@@ -57,6 +57,7 @@ struct ResumenView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color(.systemGroupedBackground))
+            .espacioBarra()
             .refreshable { await sync.runSync() }
         }
         .toolbar {

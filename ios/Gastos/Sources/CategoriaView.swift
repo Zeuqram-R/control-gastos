@@ -36,6 +36,7 @@ struct CategoriaView: View {
                 ProgressView()
             }
         }
+        .espacioBarra()
         .navigationTitle(cat == "General" ? "Quincena" : cat)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: Clave(v: sync.version, o: prefs.ocultar)) {

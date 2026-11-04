@@ -240,3 +240,10 @@ func marcado(_ texto: String, _ q: String) -> AttributedString {
     }
     return a
 }
+
+extension View {
+    /// Deja libre el espacio de la barra flotante de abajo: lo último de la página se puede subir por encima de ella.
+    func espacioBarra() -> some View {
+        safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 76) }
+    }
+}

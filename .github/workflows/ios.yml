@@ -47,15 +47,19 @@ jobs:
       - name: Armar .ipa
         run: |
           cd ios
+          VER=$(grep -E '^ *MARKETING_VERSION:' project.yml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          NOMBRE="Gastos_${VER}(${GITHUB_RUN_NUMBER}).ipa"
+          echo "NOMBRE=$NOMBRE" >> "$GITHUB_ENV"
+          echo "VER=$VER" >> "$GITHUB_ENV"
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/Gastos.app Payload/
-          zip -qry Gastos.ipa Payload
-          ls -lh Gastos.ipa
+          zip -qry "$NOMBRE" Payload
+          ls -lh "$NOMBRE"
 
       - name: Publicar
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="ios-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" ios/Gastos.ipa --title "Gastos para iPhone (build ${GITHUB_RUN_NUMBER})" \
+          gh release create "$TAG" "ios/$NOMBRE" --title "Gastos ${VER} (${GITHUB_RUN_NUMBER})" \
             --notes "Instalar con Signulous. Commit ${GITHUB_SHA::7}." --latest

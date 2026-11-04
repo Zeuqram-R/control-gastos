@@ -89,6 +89,7 @@ struct AjustesView: View {
                 }
             }
         }
+        .espacioBarra()
         .navigationTitle("Ajustes")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { dispositivo = sync.config?.dispositivo ?? "" }
@@ -131,6 +132,7 @@ struct HistorialView: View {
                 }
             }
         }
+        .espacioBarra()
         .navigationTitle("Historial")
         .toolbar {
             if !sync.log.isEmpty { Button("Borrar") { sync.clearLog() } }

@@ -58,7 +58,7 @@ struct MainTabs: View {
                 .accessibilityHidden(tab != t)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { barra }
+        .overlay(alignment: .bottom) { barra }
         .overlay(alignment: .bottom) { ToastView().padding(.bottom, 76) }
         .sheet(isPresented: $nav.gasto) { GastoSheet() }
     }
@@ -108,6 +108,7 @@ struct Proximamente: View {
         } actions: {
             Link("Abrir la app web", destination: URL(string: "https://zeuqram-r.github.io/control-gastos/")!)
         }
+        .espacioBarra()
     }
 }
 
