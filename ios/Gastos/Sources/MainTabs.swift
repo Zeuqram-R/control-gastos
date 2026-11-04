@@ -42,7 +42,12 @@ struct MainTabs: View {
             ForEach(Tab.allCases) { t in
                 NavigationStack {
                     Group {
-                        if t == .resumen { ResumenView() } else { Proximamente(tab: t) }
+                        switch t {
+                        case .resumen: ResumenView()
+                        case .lista: ListaView()
+                        case .productos: ProductosView()
+                        default: Proximamente(tab: t)
+                        }
                     }
                     .navigationTitle(t.titulo)
                     .toolbar {

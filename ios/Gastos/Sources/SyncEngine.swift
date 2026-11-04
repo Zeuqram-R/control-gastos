@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import UIKit
 
 // Motor de sincronización: la misma lógica que js/sync.js.
 // Copia local de los datos + cola de cambios que se suben a GitHub cuando hay internet.
@@ -189,11 +190,50 @@ final class SyncEngine: ObservableObject {
 
     func photoExists(_ path: String) -> Bool { shas[path] != nil }
 
+    /// Ids con cambios todavía sin subir (para mostrarlos un poco apagados).
+    func pendingIds(_ name: String) -> Set<String> {
+        let path = "\(Self.dataPrefix)\(name).json"
+        return Set(queue.filter { $0.file == path }.compactMap { $0.recId })
+    }
+
+    // MARK: Fotos (se bajan por su sha y quedan guardadas en el aparato)
+
+    private let fotoMem = NSCache<NSString, UIImage>()
+    private var fotoTasks: [String: Task<UIImage?, Never>] = [:]
+
+    func photo(_ path: String) async -> UIImage? {
+        guard let sha = shas[path] else { return nil }
+        let k = "\(path)#\(sha)" as NSString
+        if let i = fotoMem.object(forKey: k) { return i }
+        if let t = fotoTasks[path] { return await t.value }
+        let url = store.blobURL(path), shaURL = store.blobURL(path + ".sha")
+        let client = self.client
+        let t = Task<UIImage?, Never>.detached(priority: .utility) {
+            let guardada = try? Data(contentsOf: url)
+            if let s = try? String(contentsOf: shaURL, encoding: .utf8), s == sha, let d = guardada, let i = UIImage(data: d) { return i }
+            guard let client, let d = try? await client.blob(sha), let i = UIImage(data: d) else {
+                return guardada.flatMap { UIImage(data: $0) }
+            }
+            try? d.write(to: url, options: .atomic)
+            try? sha.write(to: shaURL, atomically: true, encoding: .utf8)
+            return i
+        }
+        fotoTasks[path] = t
+        let i = await t.value
+        fotoTasks[path] = nil
+        if let i { fotoMem.setObject(i, forKey: k) }
+        return i
+    }
+
     private func opsText(_ ops: [Op]) -> String { "[" + ops.map(\.jsText).joined(separator: ",") + "]" }
 
     /// Un cambio hecho en este aparato: queda en la cola y se intenta subir.
     func mutate(_ name: String, kind: String, record: String? = nil, id: String? = nil, summary: String) {
         let cfg = config
+        var id = id
+        if id == nil, let r = record, let o = try? JSONSerialization.jsonObject(with: Data(r.utf8)) as? [String: Any] {
+            id = (o["id"] as? String) ?? (o["id"] as? NSNumber)?.stringValue
+        }
         queue.append(Op(kind: kind, file: "\(Self.dataPrefix)\(name).json",
                         uid: "\(Self.b36(Date().timeIntervalSince1970 * 1000))-\(Self.rand(6))",
                         at: isoFmt.string(from: Date()),
