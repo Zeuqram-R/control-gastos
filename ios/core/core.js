@@ -2,6 +2,9 @@
 // Se empaqueta con esbuild y corre dentro de JavaScriptCore en la app de iPhone.
 import * as C from '../../js/calc.js';
 import { applyOps } from '../../js/ops.js';
+import { privacy } from '../../js/ui.js';
+import { opcionesGasto, armarGasto } from '../../js/gastoRec.js';
+import * as V from './resumen.js';
 
 const parse = (t, d) => { if (t == null || t === '') return d; return JSON.parse(t); };
 
@@ -21,6 +24,19 @@ globalThis.Core = {
     if (typeof f !== 'function') throw new Error(`calc.${nombre} no existe`);
     const r = f(parse(dText, {}), ...parse(argsText, []));
     return JSON.stringify(r === undefined ? null : r);
+  },
+  // Vistas ya armadas (textos y números) para que la app solo las dibuje. ocultar = montos con puntitos.
+  vista(nombre, dText, argsText, ocultar) {
+    const fns = { resumen: V.resumen, categoria: V.categoria, alcanza: V.alcanza, opcionesGasto: (D) => opcionesGasto(D.gastos || []), armarGasto: (D, st, extra) => {
+      const r = armarGasto(st, { tipo_cambio: D.tipo_cambio || [], cuentas: D.cuentas || [], ...extra });
+      // Los registros van como texto JSON para que la app los suba sin cambiar el orden de los campos.
+      return r.error ? r : { ...r, recText: JSON.stringify(r.rec), cuentaText: r.cuenta ? JSON.stringify(r.cuenta.record) : null, undoText: r.cuenta ? JSON.stringify(r.cuenta.undo) : null };
+    } };
+    const f = fns[nombre];
+    if (!f) throw new Error(`vista ${nombre} no existe`);
+    privacy.hide = nombre === 'armarGasto' ? false : !!ocultar; // lo que se guarda nunca lleva puntitos
+    try { return JSON.stringify(f(parse(dText, {}), ...parse(argsText, []))); }
+    finally { privacy.hide = false; }
   },
   constantes() { return JSON.stringify({ CATS: C.CATS, WINK: C.WINK, NEGOCIO: C.NEGOCIO, CAJA_NEGOCIO: C.CAJA_NEGOCIO, CATS_NEGOCIO: C.CATS_NEGOCIO }); },
 };

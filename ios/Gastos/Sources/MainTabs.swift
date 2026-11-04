@@ -35,7 +35,8 @@ enum Tab: String, CaseIterable, Identifiable {
 
 /// Seis pestañas solo con íconos (como la web). El TabView de iOS mete la sexta en "Más", por eso la barra es propia.
 struct MainTabs: View {
-    @State private var tab: Tab = .resumen
+    @EnvironmentObject var nav: AppNav
+    private var tab: Tab { nav.tab }
     var body: some View {
         ZStack {
             ForEach(Tab.allCases) { t in
@@ -58,6 +59,8 @@ struct MainTabs: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { barra }
+        .overlay(alignment: .bottom) { ToastView().padding(.bottom, 64) }
+        .sheet(isPresented: $nav.gasto) { GastoSheet() }
     }
 
     private var barra: some View {
@@ -65,7 +68,7 @@ struct MainTabs: View {
             ForEach(Tab.allCases) { t in
                 Button {
                     if tab != t { UISelectionFeedbackGenerator().selectionChanged() }
-                    tab = t
+                    nav.tab = t
                 } label: {
                     Image(systemName: t.icono)
                         .symbolVariant(tab == t ? .fill : .none)

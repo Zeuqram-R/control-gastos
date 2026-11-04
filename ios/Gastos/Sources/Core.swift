@@ -6,6 +6,7 @@ import JavaScriptCore
 final class Core {
     static let shared = Core()
     private let ctx: JSContext
+    private let lock = NSLock()
     private(set) var loadError: String?
 
     private init() {
@@ -25,6 +26,7 @@ final class Core {
     private static var lastException: String?
 
     private func invoke(_ fn: String, _ args: [Any]) throws -> String {
+        lock.lock(); defer { lock.unlock() }
         Core.lastException = nil
         let core = ctx.objectForKeyedSubscript("Core")
         guard let core, !core.isUndefined else { throw CoreError.message(loadError ?? "core.js no cargó") }
@@ -38,6 +40,12 @@ final class Core {
     func aplicar(base: String, ops: String) throws -> String { try invoke("aplicar", [base, ops]) }
     /// Archivo + cambios pendientes → JSON compacto.
     func datos(base: String, ops: String) throws -> String { try invoke("datos", [base, ops]) }
+    /// Vista ya armada por core.js (resumen, categoria, alcanza, opcionesGasto, armarGasto).
+    func vista(_ nombre: String, d: String, args: [Any], ocultar: Bool = false) throws -> Data {
+        let a = String(data: try JSONSerialization.data(withJSONObject: args), encoding: .utf8) ?? "[]"
+        return Data(try invoke("vista", [nombre, d, a, ocultar]).utf8)
+    }
+
     /// Llama una función de calc.js: calc("balanceQuincena", D, ["2026-11-03"]).
     func calc(_ nombre: String, d: String, args: [Any]) throws -> Data {
         let a = String(data: try JSONSerialization.data(withJSONObject: args), encoding: .utf8) ?? "[]"

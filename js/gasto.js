@@ -1,27 +1,10 @@
 // "+ Gasto": anotar un gasto sin factura (SINPE, Uber, efectivo, la feria…) en segundos.
-import { h, crc, usd, todayCR, addDays, dayShort, nombrePropio } from './ui.js';
+import { h, crc, todayCR, addDays } from './ui.js';
+import { FUENTES, TIPOS, ruta, opcionesGasto, armarGasto } from './gastoRec.js';
 import * as C from './calc.js';
 import { abrirHoja } from './fuente.js';
 
-const FUENTES = ['Salario', 'Wink', 'BofA', 'Préstamo', 'Efectivo'];
-
-// Viajes (Uber, DiDi, taxi): el detalle queda como "origen → destino".
-// "Walmart Río Oro a la casa" → "Walmart Río Oro → casa"; "Casa a donde Jesse" → "Casa → Jesse".
-const VIAJE = /^(uber|didi|indrive|indriver|in[ -]drive|in driver|taxi|bus|autob[uú]s|buseta|tren)\b/i;
-// Gasolina: no lleva ruta; se marca para ver cuánto se va cuando les prestan el carro.
-const GASOLINA = /(gasolin|combustible|bomba|servicentro|estaci[oó]n de servicio|\bdelta\b|\bpuma\b|\buno\b|\btotal\b|\bgulf\b)/i;
-const subViaje = (c) => (/^(bus|autob[uú]s|buseta)/i.test(c) ? 'Bus' : /^tren/i.test(c) ? 'Tren' : /^taxi/i.test(c) ? 'Taxi' : /^didi/i.test(c) ? 'DiDi' : /^in/i.test(c) ? 'InDrive' : 'Uber');
-export function ruta(txt) {
-  let t = String(txt || '').trim();
-  if (!t) return t;
-  if (t.includes('→')) return t.split('→').map((x) => nombrePropio(x)).join(' → ');
-  t = t.replace(/^(de|desde)\s+(la\s+|el\s+)?/i, '').replace(/^(a\s*)?donde\s+/i, '');
-  const m = t.match(/^(.+?)\s+(?:a|al|adonde|hacia|hasta|para|->|-)\s+(?:la\s+|el\s+)?(.+)$/i);
-  if (!m) return t;
-  const dest = m[2].trim().replace(/^(a\s*)?donde\s+/i, '');
-  return `${nombrePropio(m[1])} → ${nombrePropio(dest)}`;
-}
-const TIPOS = [['Variable', 'Variable', 'Súper, comida, transporte…'], ['Una vez', 'De una vez', 'Algo puntual']];
+export { ruta };
 
 export function abrirGasto(ctx, pre = {}) {
   const { sync, toast } = ctx;
@@ -29,10 +12,9 @@ export function abrirGasto(ctx, pre = {}) {
   const gastos = sync.data('gastos');
   const hoy = todayCR();
   // Lo último que se anotó en cada comercio sirve para adivinar la categoría.
-  const porComercio = new Map();
-  for (const g of gastos.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))) if (g.comercio) porComercio.set(g.comercio.toLowerCase(), g);
-  const catsCasa = [...new Set([...C.CATS, 'Transporte', ...gastos.filter((g) => !g.negocio).map((g) => g.categoria).filter(Boolean)])];
-  const catsNeg = [...new Set([...C.CATS_NEGOCIO, ...gastos.filter((g) => g.negocio).map((g) => g.categoria).filter(Boolean)])];
+  const O = opcionesGasto(gastos);
+  const porComercio = new Map(Object.entries(O.porComercio));
+  const { catsCasa, catsNeg } = O;
   const st = { monto: '', moneda: 'CRC', comercio: '', desc: '', categoria: pre.categoria || null, tipo: 'Variable', fuente: pre.negocio ? C.CAJA_NEGOCIO : 'Salario', quien: cfg.persona, fecha: hoy, guardando: false, catAuto: false, negocio: !!pre.negocio };
 
   const err = h('p', { class: 'error-msg', hidden: true });
@@ -83,35 +65,17 @@ export function abrirGasto(ctx, pre = {}) {
 
   const guardar = async () => {
     err.hidden = true;
-    const n = Number(String(st.monto).replace(/[^\d.]/g, ''));
-    if (!n) { err.textContent = 'Poné el monto.'; err.hidden = false; montoIn.focus(); return; }
-    if (!st.comercio.trim()) { err.textContent = '¿En qué fue? (el lugar o a quién se le pagó)'; err.hidden = false; comIn.focus(); return; }
-    if (!st.categoria) { err.textContent = 'Elegí la categoría.'; err.hidden = false; return; }
-    const tc = C.ultimoTC(sync.data('tipo_cambio'));
-    if (st.moneda === 'USD' && !tc) { err.textContent = 'No tengo tipo de cambio para pasarlo a colones.'; err.hidden = false; return; }
-    const montoCRC = st.moneda === 'USD' ? Math.round(n * Number(tc.venta)) : Math.round(n);
-    const id = `GM-${Date.now().toString(36)}`;
-    const rec = {
-      id, fecha: st.fecha, comercio: VIAJE.test(st.comercio.trim()) && !/\s/.test(st.comercio.trim()) ? subViaje(st.comercio.trim()) : nombrePropio(st.comercio), categoria: st.categoria, subcategoria: VIAJE.test(st.comercio.trim()) ? subViaje(st.comercio.trim()) : (st.categoria === 'Transporte' && GASOLINA.test(st.comercio)) ? 'Gasolina' : '',
-      descripcion: VIAJE.test(st.comercio.trim()) ? ruta(st.desc) : st.desc.trim(), monto: montoCRC, tipo: st.tipo, fuente: st.fuente, metodo_pago: st.fuente === 'Efectivo' ? 'Efectivo' : '',
-      nota: [`Anotado en la app por ${cfg.persona}`, st.quien !== cfg.persona ? `pagó ${st.quien}` : null, st.moneda === 'USD' ? `${usd(n)} al tipo de cambio de ${crc(Number(tc.venta))}` : null].filter(Boolean).join(' · '),
-      quien_pago: st.quien,
-      ...(st.negocio ? { negocio: C.NEGOCIO } : {}),
-    };
+    const R = armarGasto(st, { persona: cfg.persona, tipo_cambio: sync.data('tipo_cambio'), cuentas: sync.data('cuentas') || [], hoy });
+    if (R.error) { err.textContent = R.error; err.hidden = false; if (R.campo === 'monto') montoIn.focus(); else if (R.campo === 'comercio') comIn.focus(); return; }
+    const { rec, montoCRC } = R, id = rec.id;
     st.guardando = true; btn.disabled = true;
-    await sync.mutate('gastos', { kind: 'upsert', record: rec }, `gasto: ${rec.comercio} ${crc(montoCRC)}`);
-    // Si salió de BofA, se descuenta del saldo de la cuenta.
-    const cta = (sync.data('cuentas') || []).find((c) => c.fuente === st.fuente);
-    let antes = null;
-    if (cta) {
-      antes = Number(cta.saldo) || 0;
-      const resta = cta.moneda === 'USD' ? (st.moneda === 'USD' ? n : Math.round((n / Number(tc?.venta || 1)) * 100) / 100) : montoCRC;
-      await sync.mutate('cuentas', { kind: 'patch', record: { id: cta.id, saldo: Math.round((antes - resta) * 100) / 100, fecha: hoy } }, `saldo de ${cta.nombre} por gasto`);
-    }
+    await sync.mutate('gastos', { kind: 'upsert', record: rec }, R.summary);
+    const cta = R.cuenta;
+    if (cta) await sync.mutate('cuentas', { kind: 'patch', record: cta.record }, cta.summary);
     cerrar();
     toast(`Anotado: ${rec.comercio} ${crc(montoCRC)}`, { label: 'Deshacer', fn: async () => {
-      await sync.mutate('gastos', { kind: 'delete', id }, `deshace gasto ${rec.comercio}`);
-      if (cta) await sync.mutate('cuentas', { kind: 'patch', record: { id: cta.id, saldo: antes } }, `saldo de ${cta.nombre}`);
+      await sync.mutate('gastos', { kind: 'delete', id }, R.undoSummary);
+      if (cta) await sync.mutate('cuentas', { kind: 'patch', record: cta.undo }, cta.undoSummary);
     } });
   };
   const btn = h('button', { type: 'button', class: 'btn blue block', onclick: guardar }, 'Anotar gasto');
