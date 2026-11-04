@@ -44,7 +44,7 @@ export function quincenas(gastos, presupuestos) {
       out.push({
         inicio, fin: q.fin, categoria: cat,
         gastado: sum(list, (g) => g.monto),
-        salario: sum(list.filter((g) => g.fuente !== 'Wink'), (g) => g.monto),
+        salario: sum(list.filter((g) => g.fuente !== 'Wink' && !g.cuenta), (g) => g.monto),
         wink: sum(list.filter((g) => g.fuente === 'Wink'), (g) => g.monto),
         n: list.length, presupuesto: pr ? Number(pr.monto) : null,
       });
@@ -176,32 +176,33 @@ export function movimientos(D) {
   const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc);
   const venta = tc ? Number(tc.venta) : 0;
   const out = [];
+  // Lo pagado desde otra cuenta (BofA) sale en la lista marcado con cuenta: true; no toca la plata de la quincena (ver cajaQ).
+  const cta = (f) => (deCuenta.has(f) ? { cuenta: true } : {});
   for (const g of D.gastos) {
-    if (deCuenta.has(g.fuente)) continue;
     // Santo Coco: lo pagado con la caja del negocio no toca la casa; lo pagado con plata de la casa sale como categoría "Santo Coco".
     if (g.negocio) {
       if (g.fuente === CAJA_NEGOCIO) continue;
-      out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.negocio, monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [g.categoria, g.descripcion].filter(Boolean).join(' · '), tipo: 'gasto', gtipo: g.tipo, negocio: g.negocio });
+      out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.negocio, monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [g.categoria, g.descripcion].filter(Boolean).join(' · '), tipo: 'gasto', gtipo: g.tipo, negocio: g.negocio, ...cta(g.fuente) });
       continue;
     }
-    out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.categoria || 'Sin categoría', monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [...new Set([g.descripcion, g.subcategoria].filter(Boolean))].join(' · '), tipo: 'gasto', gtipo: g.tipo });
+    out.push({ id: g.id, fecha: d10(g.fecha), categoria: g.categoria || 'Sin categoría', monto: Number(g.monto) || 0, fuente: g.fuente, titulo: g.comercio, sub: [...new Set([g.descripcion, g.subcategoria].filter(Boolean))].join(' · '), tipo: 'gasto', gtipo: g.tipo, ...cta(g.fuente) });
   }
   for (const p of D.pagos_recurrentes) {
-    if (deCuenta.has(p.fuente) || p.no_cuenta) continue; // no_cuenta: pagado antes de llevar el control
+    if (p.no_cuenta) continue; // no_cuenta: pagado antes de llevar el control
     if (p.recurrente === WINK) continue; // pagar la tarjeta no es gasto nuevo: lo comprado con Wink ya se contó
     const r = recs.get(p.recurrente || p.id.split('_')[0]) || {};
-    out.push({ id: `pr:${p.id}`, fecha: d10(p.fecha), categoria: r.categoria || 'Suscripciones y pagos recurrentes', monto: Number(p.monto_crc) || 0, fuente: p.fuente, titulo: r.nombre || 'Pago recurrente', sub: `Pago tachado · vence ${dayShort(p.vence)}`, tipo: 'rec', gtipo: 'Fijo' });
+    out.push({ id: `pr:${p.id}`, fecha: d10(p.fecha), categoria: r.categoria || 'Suscripciones y pagos recurrentes', monto: Number(p.monto_crc) || 0, fuente: p.fuente, titulo: r.nombre || 'Pago recurrente', sub: `Pago tachado · vence ${dayShort(p.vence)}`, tipo: 'rec', gtipo: 'Fijo', ...cta(p.fuente) });
   }
   const crcDe = (d, m) => (d.moneda === 'USD' ? Math.round(m * venta) : m);
   for (const p of D.pagos_deudas) {
     const d = deudas.find((x) => x.id === p.id);
-    if (!d || d.direccion !== 'debemos' || deCuenta.has(p.fuente)) continue;
-    out.push({ id: `pd:${p.id}`, fecha: d10(p.fecha), categoria: d.categoria || 'Deudas', monto: crcDe(d, Number(d.monto)), fuente: p.fuente, titulo: `${d.persona} · ${d.concepto}`, sub: 'Deuda pagada', tipo: 'deuda', gtipo: 'Deudas' });
+    if (!d || d.direccion !== 'debemos') continue;
+    out.push({ id: `pd:${p.id}`, fecha: d10(p.fecha), categoria: d.categoria || 'Deudas', monto: crcDe(d, Number(d.monto)), fuente: p.fuente, titulo: `${d.persona} · ${d.concepto}`, sub: 'Deuda pagada', tipo: 'deuda', gtipo: 'Deudas', ...cta(p.fuente) });
   }
   for (const a of D.abonos || []) {
     const d = deudas.find((x) => x.id === a.deuda);
-    if (!d || d.direccion !== 'debemos' || deCuenta.has(a.fuente)) continue;
-    out.push({ id: `ab:${a.id}`, fecha: d10(a.fecha), categoria: d.categoria || 'Deudas', monto: crcDe(d, Number(a.monto)), fuente: a.fuente, titulo: `${d.persona} · abono`, sub: d.concepto, tipo: 'abono', gtipo: 'Deudas' });
+    if (!d || d.direccion !== 'debemos') continue;
+    out.push({ id: `ab:${a.id}`, fecha: d10(a.fecha), categoria: d.categoria || 'Deudas', monto: crcDe(d, Number(a.monto)), fuente: a.fuente, titulo: `${d.persona} · abono`, sub: d.concepto, tipo: 'abono', gtipo: 'Deudas', ...cta(a.fuente) });
   }
   return out.sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
@@ -530,7 +531,7 @@ export function proyeccion(D, hoy, n = 12) {
   const deudas = deudasCRC(saldoDeudas(D.deudas, D.recurrentes, D.pagos_recurrentes, D.abonos || []), tc).filter((d) => d.direccion === 'debemos' && !pagDeu.has(d.id));
   const movs = movimientos(D);
   // Gasto del día a día (súper, salidas, transporte…): promedio de las quincenas cerradas; si no hay, lo de la quincena actual.
-  const variablesDe = (ini, fin) => sum(movs.filter((m) => m.fecha >= ini && m.fecha <= fin && m.gtipo === 'Variable'), (m) => m.monto);
+  const variablesDe = (ini, fin) => sum(movs.filter((m) => m.fecha >= ini && m.fecha <= fin && m.gtipo === 'Variable' && !m.cuenta), (m) => m.monto);
   const estDetalle = [...groupBy(movs.filter((m) => m.fecha < B.q.inicio), (m) => quincenaDe(m.fecha).inicio)].map(([ini]) => ({ inicio: ini, fin: quincenaDe(ini).fin, monto: variablesDe(ini, quincenaDe(ini).fin) }));
   const cerradas = estDetalle.map((x) => x.monto);
   const estVar = cerradas.length ? Math.round(sum(cerradas) / cerradas.length) : variablesDe(B.q.inicio, B.q.fin);

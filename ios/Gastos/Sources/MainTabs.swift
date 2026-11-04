@@ -59,32 +59,42 @@ struct MainTabs: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { barra }
-        .overlay(alignment: .bottom) { ToastView().padding(.bottom, 64) }
+        .overlay(alignment: .bottom) { ToastView().padding(.bottom, 76) }
         .sheet(isPresented: $nav.gasto) { GastoSheet() }
     }
 
+    @Namespace private var marca
+
+    /// Igual que la web: una cápsula flotante de vidrio, centrada, solo íconos; la pestaña activa lleva su pastilla verde suave.
     private var barra: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 4) {
             ForEach(Tab.allCases) { t in
                 Button {
                     if tab != t { UISelectionFeedbackGenerator().selectionChanged() }
-                    nav.tab = t
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { nav.tab = t }
                 } label: {
                     Image(systemName: t.icono)
-                        .symbolVariant(tab == t ? .fill : .none)
-                        .font(.system(size: 21, weight: tab == t ? .semibold : .regular))
-                        .frame(maxWidth: .infinity, minHeight: 46)
-                        .foregroundStyle(tab == t ? Paleta.ok : Color.secondary)
-                        .contentShape(Rectangle())
+                        .font(.system(size: 22, weight: .regular))
+                        .frame(width: 54, height: 46)
+                        .foregroundStyle(tab == t ? Paleta.ok : Color.primary.opacity(0.75))
+                        .background {
+                            if tab == t {
+                                Capsule().fill(Paleta.ok.opacity(0.16)).matchedGeometryEffect(id: "tab", in: marca)
+                            }
+                        }
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(t.titulo)
                 .accessibilityAddTraits(tab == t ? .isSelected : [])
             }
         }
-        .padding(.top, 4)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(Capsule().fill(.regularMaterial))
+        .overlay(Capsule().stroke(Color.primary.opacity(0.10), lineWidth: 1))
+        .shadow(color: .black.opacity(0.14), radius: 16, y: 6)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
     }
 }
 
