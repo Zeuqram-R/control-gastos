@@ -64,11 +64,11 @@ struct ProductoView: View {
             Text("Avisá aquí y se actualizan la lista y los perecederos.").font(.caption).foregroundStyle(.secondary)
             Button { refri = true } label: { Text("🧊 Lo guardamos en la refri").frame(maxWidth: .infinity) }.buttonStyle(.bordered)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                ForEach([("terminado", "Se acabó"), ("congelado", "Lo congelamos"), ("cocinado", "Lo cocinamos"), ("botado", "Se botó")], id: \.0) { t, l in
+                ForEach([("terminado", "🫙 Se acabó"), ("congelado", "❄️ Lo congelamos"), ("cocinado", "🍳 Lo cocinamos"), ("botado", "🗑️ Se botó")], id: \.0) { t, l in
                     Button { evento(vm, t, dias: t == "cocinado" ? 3 : nil) } label: { Text(l).frame(maxWidth: .infinity) }.buttonStyle(.bordered)
                 }
             }
-            Button { agregarLista(vm) } label: { Text(vm.enLista == true ? "Ya está en la lista" : "Agregar a la lista").bold().frame(maxWidth: .infinity) }
+            Button { agregarLista(vm) } label: { Text(vm.enLista == true ? "✅ Ya está en la lista" : "🛒 Agregar a la lista").bold().frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent).tint(Paleta.ok).disabled(vm.enLista == true)
             ForEach(vm.eventos ?? []) { e in
                 VStack(alignment: .leading, spacing: 2) { Text(e.titulo).font(.subheadline); Text(e.sub).font(.caption).foregroundStyle(.secondary) }

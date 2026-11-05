@@ -6,6 +6,7 @@ struct GastosApp: App {
     @StateObject private var lock = LockManager()
     @StateObject private var prefs = Prefs()
     @StateObject private var nav = AppNav()
+    @StateObject private var tachador = Tachador()
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -15,6 +16,7 @@ struct GastosApp: App {
                 .environmentObject(lock)
                 .environmentObject(prefs)
                 .environmentObject(nav)
+                .environmentObject(tachador)
                 .tint(Paleta.ok)
         }
         .onChange(of: phase) { _, p in

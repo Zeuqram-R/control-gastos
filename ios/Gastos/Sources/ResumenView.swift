@@ -206,7 +206,6 @@ struct ResumenView: View {
         }
     }
 
-    private func colorQuien(_ q: String) -> Color { q == "Jose" ? Paleta.blue : q == "Ali" ? Color.pink : Paleta.ok }
 
     @ViewBuilder private func cuentas(_ vm: ResumenVM) -> some View {
         if let c = vm.cuentas {

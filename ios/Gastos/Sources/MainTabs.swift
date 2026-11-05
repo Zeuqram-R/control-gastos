@@ -46,6 +46,8 @@ struct MainTabs: View {
                         case .resumen: ResumenView()
                         case .lista: ListaView()
                         case .productos: ProductosView()
+                        case .recurrentes: RecurrentesView()
+                        case .deudas: DeudasView()
                         default: Proximamente(tab: t)
                         }
                     }
