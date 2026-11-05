@@ -188,7 +188,20 @@ final class SyncEngine: ObservableObject {
         "{" + names.map { "\(jsonStr($0)):\(data($0))" }.joined(separator: ",") + "}"
     }
 
-    func photoExists(_ path: String) -> Bool { shas[path] != nil }
+    func photoExists(_ path: String) -> Bool { shas[path] != nil || locales[path] != nil }
+    func photoPaths(_ prefix: String) -> [String] { shas.keys.filter { $0.hasPrefix(prefix) }.sorted() }
+
+    /// Fotos recién tomadas en este aparato (se ven al toque, antes de que GitHub las tenga).
+    private var locales: [String: UIImage] = [:]
+    func fotoLocal(_ path: String, _ img: UIImage) { locales[path] = img; version += 1 }
+
+    /// Subir varios archivos juntos en un solo commit (una factura: fotos + ficha). Sin internet, queda en cola.
+    func subir(_ files: [(path: String, b64: String)], message: String, resumen: String) {
+        uploads.append(Upload(id: "U\(Self.b36(Date().timeIntervalSince1970 * 1000))", at: isoFmt.string(from: Date()),
+                              files: files.map { Upload.File(path: $0.path, b64: $0.b64) }, message: message, resumen: resumen))
+        store.save("uploads.json", uploads)
+        sync()
+    }
 
     /// Ids con cambios todavía sin subir (para mostrarlos un poco apagados).
     func pendingIds(_ name: String) -> Set<String> {
@@ -202,6 +215,7 @@ final class SyncEngine: ObservableObject {
     private var fotoTasks: [String: Task<UIImage?, Never>] = [:]
 
     func photo(_ path: String) async -> UIImage? {
+        if let l = locales[path], shas[path] == nil { return l }
         guard let sha = shas[path] else { return nil }
         let k = "\(path)#\(sha)" as NSString
         if let i = fotoMem.object(forKey: k) { return i }

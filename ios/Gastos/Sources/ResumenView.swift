@@ -26,7 +26,7 @@ struct ResumenView: View {
                         chips(proxy)
                         anotar(vm)
                         if let a = vm.anio {
-                            Link(destination: URL(string: "https://zeuqram-r.github.io/control-gastos/")!) {
+                            NavigationLink { AnioView() } label: {
                                 Tarjeta {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
@@ -108,13 +108,13 @@ struct ResumenView: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(vm.preguntas > 0 ? "Claude tiene \(vm.preguntas) pregunta\(vm.preguntas == 1 ? "" : "s")" : "Anotar").bold()
-                    Text(vm.preguntas > 0 ? "Sobre las últimas facturas. Por ahora se contestan en la web." : "Anotá un gasto. Las facturas por ahora se suben en la web.")
+                    Text(vm.preguntas > 0 ? "Sobre las últimas facturas. Tocá para contestar." : (sync.uploads.isEmpty ? "Anotá un gasto o subí la foto de la factura." : "\(sync.uploads.count) esperando internet para subir"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Gasto") { nav.gasto = true }
                     .buttonStyle(.borderedProminent).tint(Paleta.blue).bold()
-                Link("Factura", destination: URL(string: "https://zeuqram-r.github.io/control-gastos/")!)
+                NavigationLink { FacturasView() } label: { Text(vm.preguntas > 0 ? "Contestar" : "Factura") }
                     .buttonStyle(.bordered)
             }
         }
@@ -261,7 +261,7 @@ struct ResumenView: View {
     }
 
     private func negocio(_ vm: ResumenVM) -> some View {
-        Link(destination: URL(string: "https://zeuqram-r.github.io/control-gastos/")!) {
+        NavigationLink { NegocioView() } label: {
             Tarjeta {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -499,7 +499,7 @@ struct MesAMes: View {
                 }
             }
             if let e = c.enCurso { Text(e).font(.caption).foregroundStyle(.secondary) }
-            Link("Ver el año completo ›", destination: URL(string: "https://zeuqram-r.github.io/control-gastos/")!).font(.caption.weight(.semibold))
+            NavigationLink { AnioView() } label: { Text("Ver el año completo ›") }.font(.caption.weight(.semibold))
         }
     }
 }

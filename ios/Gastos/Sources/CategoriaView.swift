@@ -56,6 +56,7 @@ struct CategoriaView: View {
 /// "¿Me alcanza?": antes de comprar algo, ver cómo quedarían esta quincena y las próximas.
 struct AlcanzaSheet: View {
     var nombre: String? = nil
+    var montoInicial: String? = nil
     @EnvironmentObject var sync: SyncEngine
     @EnvironmentObject var prefs: Prefs
     @Environment(\.dismiss) private var dismiss
@@ -102,7 +103,7 @@ struct AlcanzaSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Listo") { dismiss() } } }
             .task(id: Clave(m: monto, c: cuando, v: sync.version)) { await calcular() }
-            .onAppear { foco = true }
+            .onAppear { if let m = montoInicial, monto.isEmpty { monto = m } else { foco = true } }
         }
         .presentationDetents([.large])
     }
