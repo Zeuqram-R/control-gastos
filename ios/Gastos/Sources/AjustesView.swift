@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AjustesView: View {
     @EnvironmentObject var sync: SyncEngine
+    @EnvironmentObject var prefs: Prefs
     @EnvironmentObject var lock: LockManager
     @State private var dispositivo = ""
     @State private var nuevoToken = ""
@@ -25,6 +26,12 @@ struct AjustesView: View {
                     Text("Los cambios que hagás se anotan en GitHub como «\(c.persona) (\(c.dispositivo))».")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+            }
+
+            Section("Apariencia") {
+                Picker("Tema", selection: $prefs.tema) { Text("Sistema").tag("sistema"); Text("Claro").tag("claro"); Text("Oscuro").tag("oscuro") }
+                    .pickerStyle(.segmented)
+                Toggle("Ocultar montos al abrir", isOn: $prefs.ocultar)
             }
 
             Section {
@@ -66,6 +73,10 @@ struct AjustesView: View {
             } header: { Text("Token de GitHub") } footer: {
                 Text(sync.tokenExp.map { "El token actual vence: \($0)." } ?? "El token está guardado en el Keychain de este aparato.")
             }
+
+            Section {
+                NavigationLink { RespaldoView() } label: { Label("Respaldo y restaurar", systemImage: "externaldrive") }
+            } footer: { Text("Bajar todo en Excel o JSON, o restaurar desde un respaldo.") }
 
             Section("Datos en este aparato") {
                 let i = sync.storageInfo()

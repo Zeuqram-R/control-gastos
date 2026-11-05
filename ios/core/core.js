@@ -8,6 +8,7 @@ import * as V from './resumen.js';
 import * as P from './productos.js';
 import * as G from './pagos.js';
 import * as X from './extras.js';
+import * as R from './respaldo.js';
 
 const parse = (t, d) => { if (t == null || t === '') return d; return JSON.parse(t); };
 
@@ -30,14 +31,14 @@ globalThis.Core = {
   },
   // Vistas ya armadas (textos y números) para que la app solo las dibuje. ocultar = montos con puntitos.
   vista(nombre, dText, argsText, ocultar) {
-    const fns = { metas: X.metas, nuevaMeta: X.nuevaMeta, apartar: X.apartar, guardarDeseo: X.guardarDeseo, negocio: X.negocio, venta: (D, ...a) => X.venta(...a), anio: X.anio, facturas: X.facturas, fichaFactura: (D, ...a) => X.fichaFactura(...a), respuesta: X.respuesta, recurrentes: G.recurrentes, deudas: G.deudas, abono: G.abono, ajusteCuenta: G.ajusteCuenta, nuevaDeuda: (D, ...a) => G.nuevaDeuda(...a), saldoCuenta: G.saldoCuenta, lista: P.lista, agregarLista: P.agregarLista, productos: P.productos, producto: P.producto, resumen: V.resumen, categoria: V.categoria, alcanza: V.alcanza, opcionesGasto: (D) => opcionesGasto(D.gastos || []), armarGasto: (D, st, extra) => {
+    const fns = { respaldo: R.respaldo, revisarRespaldo: R.revisar, clavesRespaldo: () => R.claves(), metas: X.metas, nuevaMeta: X.nuevaMeta, apartar: X.apartar, guardarDeseo: X.guardarDeseo, negocio: X.negocio, venta: (D, ...a) => X.venta(...a), anio: X.anio, facturas: X.facturas, fichaFactura: (D, ...a) => X.fichaFactura(...a), respuesta: X.respuesta, recurrentes: G.recurrentes, deudas: G.deudas, abono: G.abono, ajusteCuenta: G.ajusteCuenta, nuevaDeuda: (D, ...a) => G.nuevaDeuda(...a), saldoCuenta: G.saldoCuenta, lista: P.lista, agregarLista: P.agregarLista, productos: P.productos, producto: P.producto, resumen: V.resumen, categoria: V.categoria, alcanza: V.alcanza, opcionesGasto: (D) => opcionesGasto(D.gastos || []), armarGasto: (D, st, extra) => {
       const r = armarGasto(st, { tipo_cambio: D.tipo_cambio || [], cuentas: D.cuentas || [], ...extra });
       // Los registros van como texto JSON para que la app los suba sin cambiar el orden de los campos.
       return r.error ? r : { ...r, recText: JSON.stringify(r.rec), cuentaText: r.cuenta ? JSON.stringify(r.cuenta.record) : null, undoText: r.cuenta ? JSON.stringify(r.cuenta.undo) : null };
     } };
     const f = fns[nombre];
     if (!f) throw new Error(`vista ${nombre} no existe`);
-    privacy.hide = ['nuevaMeta', 'apartar', 'guardarDeseo', 'venta', 'fichaFactura', 'respuesta', 'armarGasto', 'agregarLista', 'abono', 'ajusteCuenta', 'nuevaDeuda', 'saldoCuenta'].includes(nombre) ? false : !!ocultar; // lo que se guarda nunca lleva puntitos
+    privacy.hide = ['respaldo', 'revisarRespaldo', 'nuevaMeta', 'apartar', 'guardarDeseo', 'venta', 'fichaFactura', 'respuesta', 'armarGasto', 'agregarLista', 'abono', 'ajusteCuenta', 'nuevaDeuda', 'saldoCuenta'].includes(nombre) ? false : !!ocultar; // lo que se guarda nunca lleva puntitos
     try { return JSON.stringify(f(parse(dText, {}), ...parse(argsText, []))); }
     finally { privacy.hide = false; }
   },

@@ -3,7 +3,7 @@ name: App de iPhone
 on:
   push:
     branches: [main]
-    paths: ['ios/**', 'js/calc.js', 'js/ops.js', 'js/ui.js', 'js/gastoRec.js', '.github/workflows/ios.yml']
+    paths: ['ios/**', 'js/calc.js', 'js/ops.js', 'js/ui.js', 'js/gastoRec.js', 'js/respaldo.js', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:

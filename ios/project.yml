@@ -7,7 +7,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.5"
+    MARKETING_VERSION: "0.6"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1,2"
     DEVELOPMENT_TEAM: ""
@@ -30,6 +30,8 @@ targets:
         CFBundleDevelopmentRegion: es
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         NSFaceIDUsageDescription: Para que solo vos puedas abrir tus cuentas.
         NSCameraUsageDescription: Para tomarle foto a las facturas y a lo que quieren comprar.
         NSPhotoLibraryUsageDescription: Para elegir la foto de una factura o de un deseo.

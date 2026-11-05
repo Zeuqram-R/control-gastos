@@ -18,6 +18,7 @@ struct GastosApp: App {
                 .environmentObject(nav)
                 .environmentObject(tachador)
                 .tint(Paleta.ok)
+                .preferredColorScheme(prefs.esquema)
         }
         .onChange(of: phase) { _, p in
             switch p {
@@ -36,7 +37,10 @@ struct GastosApp: App {
 final class Prefs: ObservableObject {
     /// Ocultar montos (como el ojo de la web).
     @Published var ocultar: Bool { didSet { UserDefaults.standard.set(ocultar, forKey: "ocultar") } }
-    init() { ocultar = UserDefaults.standard.bool(forKey: "ocultar") }
+    /// Apariencia: sistema, claro u oscuro.
+    @Published var tema: String { didSet { UserDefaults.standard.set(tema, forKey: "tema") } }
+    init() { ocultar = UserDefaults.standard.bool(forKey: "ocultar"); tema = UserDefaults.standard.string(forKey: "tema") ?? "sistema" }
+    var esquema: ColorScheme? { tema == "claro" ? .light : tema == "oscuro" ? .dark : nil }
     func crc(_ v: Double) -> String { Fmt.crc(v, hide: ocultar) }
 }
 

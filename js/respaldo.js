@@ -59,9 +59,10 @@ function hoja(rows) {
     + (cols.length ? `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '')
     + `<sheetData>${fila(cols, 1, true)}${rows.map((r, i) => fila(cols.map((c) => celda(r[c])), i + 2)).join('')}</sheetData></worksheet>`;
 }
-export function excel(datos) {
+// Los archivos que van adentro del .xlsx (la app de iPhone también los usa y arma el ZIP por su cuenta).
+export function xlsxArchivos(datos) {
   const hojas = ARCHIVOS.filter(([k]) => datos[k]);
-  const files = [
+  return [
     ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${hojas.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
     ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
     ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${hojas.map(([, t], i) => `<sheet name="${esc(t)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
@@ -69,8 +70,8 @@ export function excel(datos) {
     ['xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf/><xf fontId="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
     ...hojas.map(([k], i) => [`xl/worksheets/sheet${i + 1}.xml`, hoja(datos[k])]),
   ];
-  return zip(files);
 }
+export function excel(datos) { return zip(xlsxArchivos(datos)); }
 
 export function bajar(blob, nombre) {
   const url = URL.createObjectURL(blob);
@@ -89,10 +90,15 @@ export function respaldar(sync, formato, hoy) {
 
 // Lee un respaldo .json y dice qué trae, comparado con lo que hay ahora.
 export async function leerRespaldo(file, sync) {
+  return revisarRespaldo(await file.text(), (k) => sync.data(k) || []);
+}
+
+// Lo mismo a partir del texto (sin archivo ni sync; lo usa también la app de iPhone).
+export function revisarRespaldo(texto, actual) {
   let obj;
-  try { obj = JSON.parse(await file.text()); } catch (e) { throw new Error('Ese archivo no es un respaldo JSON válido.'); }
+  try { obj = JSON.parse(texto); } catch (e) { throw new Error('Ese archivo no es un respaldo JSON válido.'); }
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('Ese archivo no es un respaldo de la app.');
-  const partes = ARCHIVOS.filter(([k]) => Array.isArray(obj[k])).map(([k, t]) => ({ k, t, n: obj[k].length, ahora: (sync.data(k) || []).length, datos: obj[k] }));
+  const partes = ARCHIVOS.filter(([k]) => Array.isArray(obj[k])).map(([k, t]) => ({ k, t, n: obj[k].length, ahora: actual(k).length, datos: obj[k] }));
   if (!partes.length) throw new Error('Ese archivo no trae datos de la app (¿es el Excel? Para restaurar se usa la copia JSON).');
   const malos = partes.filter((p) => p.datos.some((r) => !r || typeof r !== 'object' || r.id == null));
   if (malos.length) throw new Error(`El respaldo parece dañado (${malos.map((p) => p.t).join(', ')}).`);
